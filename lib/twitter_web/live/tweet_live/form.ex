@@ -11,6 +11,7 @@ defmodule TwitterWeb.TweetLive.Form do
       </.header>
 
       <.form for={%{}} as={:tweet} id="tweet-form" phx-submit="save">
+        <.input label="Text" type="textarea" name="tweet[text]" value={@tweet && @tweet.text} />
         <footer>
           <.button phx-disable-with="Saving..." variant="primary">Save Tweet</.button>
           <.button navigate={~p"/"}>Cancel</.button>
@@ -44,11 +45,17 @@ defmodule TwitterWeb.TweetLive.Form do
   def handle_event("save", params, socket) do
     result =
       if socket.assigns.tweet do
-        # we're updating a tweet. Update logic goes here.
-        {:error, "Update not implemented"}
+        socket.assigns.tweet
+        |> Ash.Changeset.for_update(:update, params["tweet"] || %{},
+          actor: socket.assigns.current_user
+        )
+        |> Ash.update()
       else
-        # we're creating a tweet. Create logic goes here.
-        {:error, "Create not implemented"}
+        Twitter.Tweets.Tweet
+        |> Ash.Changeset.for_create(:create, params["tweet"] || %{},
+          actor: socket.assigns.current_user
+        )
+        |> Ash.create()
       end
 
     case result do

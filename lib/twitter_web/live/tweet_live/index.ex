@@ -25,6 +25,10 @@ defmodule TwitterWeb.TweetLive.Index do
           </span>
         </:col>
 
+        <:col :let={{_id, tweet}} label="Text">
+          {tweet.text}
+        </:col>
+
         <:action :let={{_id, tweet}}>
           <div class="sr-only">
             <.link navigate={~p"/tweets/#{tweet}"}>Show</.link>
