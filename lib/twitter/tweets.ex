@@ -11,5 +11,6 @@ defmodule Twitter.Tweets do
   end
 
   resources do
+    resource Twitter.Tweets.Tweet
   end
 end
