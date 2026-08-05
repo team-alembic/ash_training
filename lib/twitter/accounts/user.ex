@@ -25,6 +25,8 @@ defmodule Twitter.Accounts.User do
       enabled? true
       token_resource Twitter.Accounts.Token
       signing_secret Twitter.Accounts.Secrets
+      store_all_tokens? true
+      require_token_presence_for_authentication? true
     end
   end
 

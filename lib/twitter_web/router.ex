@@ -1,5 +1,6 @@
 defmodule TwitterWeb.Router do
   use TwitterWeb, :router
+
   use AshAuthentication.Phoenix.Router
 
   pipeline :browser do
@@ -33,20 +34,20 @@ defmodule TwitterWeb.Router do
   scope "/", TwitterWeb do
     pipe_through :browser
 
-    ash_authentication_live_session :authentication_required,
-      on_mount: {TwitterWeb.LiveUserAuth, :live_user_required} do
+    ash_authentication_live_session :authentication_required do
       live "/", TweetLive.Index, :index
-      live "/tweets/new", TweetLive.Index, :new
-      live "/tweets/:id/edit", TweetLive.Index, :edit
-
+      live "/tweets/new", TweetLive.Form, :new
+      live "/tweets/:id/edit", TweetLive.Form, :edit
       live "/tweets/:id", TweetLive.Show, :show
-      live "/tweets/:id/show/edit", TweetLive.Show, :edit
     end
 
-    sign_in_route(register_path: "/register", reset_path: "/reset")
+    sign_in_route register_path: "/register",
+                  reset_path: "/reset",
+                  auth_routes_prefix: "/auth",
+                  on_mount: [{TwitterWeb.LiveUserAuth, :live_no_user}]
 
     sign_out_route AuthController
-    auth_routes_for Twitter.Accounts.User, to: AuthController
+    auth_routes AuthController, Twitter.Accounts.User
     reset_route []
   end
 

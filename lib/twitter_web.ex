@@ -39,8 +39,7 @@ defmodule TwitterWeb do
   def controller do
     quote do
       use Phoenix.Controller,
-        formats: [:html, :json],
-        layouts: [html: TwitterWeb.Layouts]
+        formats: [:html, :json]
 
       import Plug.Conn
       use Gettext, backend: TwitterWeb.Gettext
@@ -51,8 +50,7 @@ defmodule TwitterWeb do
 
   def live_view do
     quote do
-      use Phoenix.LiveView,
-        layout: {TwitterWeb.Layouts, :app}
+      use Phoenix.LiveView
 
       unquote(html_helpers())
     end
@@ -89,6 +87,7 @@ defmodule TwitterWeb do
 
       # Shortcut for generating JS commands
       alias Phoenix.LiveView.JS
+      alias TwitterWeb.Layouts
 
       # Routes generation with the ~p sigil
       unquote(verified_routes())

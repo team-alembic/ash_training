@@ -13,8 +13,6 @@ defmodule TwitterWeb.AuthController do
   end
 
   def failure(conn, _activity, _reason) do
-    IO.inspect("HERE!")
-
     conn
     |> put_status(401)
     |> redirect(to: ~p"/sign-in")
@@ -25,7 +23,7 @@ defmodule TwitterWeb.AuthController do
     return_to = get_session(conn, :return_to) || ~p"/"
 
     conn
-    |> clear_session()
+    |> clear_session(:twitter)
     |> redirect(to: return_to)
   end
 end

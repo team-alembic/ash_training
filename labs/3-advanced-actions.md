@@ -165,7 +165,7 @@ end
 12. We can also give this same `relate_actor/1` treatment for our `:create` action on `Twitter.Tweets.Tweet`.
     Remove `:user_id` from the `accept` list, and add the `change relate_actor(:user)` to the resource.
 
-Then you can remove the following code from the `"save"` handler in `form_component.ex`.
+Then you can remove the following code from the `"save"` handler in `lib/twitter_web/live/tweet_live/form.ex`.
 
 ```elixir
 params = put_in(params, ["tweet", "user_id"], socket.assigns.current_user.id)

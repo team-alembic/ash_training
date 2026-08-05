@@ -35,3 +35,10 @@ twitter-*.tar
 npm-debug.log
 /assets/node_modules/
 
+# env files
+.envrc
+
+# language server
+.elixir_ls/
+.expert/
+core

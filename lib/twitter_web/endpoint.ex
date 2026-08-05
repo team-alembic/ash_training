@@ -22,7 +22,7 @@ defmodule TwitterWeb.Endpoint do
   plug Plug.Static,
     at: "/",
     from: :twitter,
-    gzip: false,
+    gzip: not code_reloading?,
     only: TwitterWeb.static_paths()
 
   # Code reloading can be explicitly enabled under the

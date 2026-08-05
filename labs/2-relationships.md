@@ -21,7 +21,7 @@ end
 
 3. Then we can add `:user_id` to the `accept` list for the `:create` action.
 
-4. Next we'll add the following code to `create` block of our `"save"` handler in `form_component.exs` (above the `Changeset.for_create` code). This will set the `:user_id` attribute to the current user's id when creating a tweet, by modifying the params.
+4. Next we'll add the following code to `create` block of our `"save"` handler in `lib/twitter_web/live/tweet_live/form.ex` (above the `Changeset.for_create` code). This will set the `:user_id` attribute to the current user's id when creating a tweet, by modifying the params.
 
 We'll use `Map.put` to put the user_id in the tweet's params (for now).
 
@@ -48,23 +48,12 @@ result =
 @tweet_loads [user: [:email]]
 ```
 
-6. Then, alter our calls to `Ash.read!` and `Ash.get!` to include the `load` option. `load: @tweet_loads`.
-   Search for `Ash.read` and `Ash.get`. For example: `Ash.read!(query, load: @tweet_loads)`.
+6. Then, alter the call to `Ash.read!` in the `mount/3` function of `index.ex` to include the `load` option. `load: @tweet_loads`.
+   For example: `Ash.read!(query, load: @tweet_loads)`.
 
-Note: there are multiple calls to `Ash.get!`. Ignore the commented out one.
-
-7. When a tweet is saved, the form component sends a message to the parent LiveView. You can see how we react to this in `handle_info`, where we add the new tweet to the LiveView's state.
-
-Lets update the `handle_info` function in `index.exs` to load the required data when a tweet is saved.
-
-```elixir
-@impl true
-def handle_info({TwitterWeb.TweetLive.FormComponent, {:saved, tweet}}, socket) do
-  # Add this next line
-  tweet = Ash.load!(tweet, @tweet_loads, actor: socket.assigns.current_user)
-  {:noreply, stream_insert(socket, :tweets, tweet)}
-end
-```
+7. When a tweet is saved, the form navigates back to the tweet list. The list is re-read
+   in `mount/3`, so the freshly loaded data (including our new `load`) is picked up automatically —
+   nothing else to do here.
 
 8. Now we can show the email in a table column:
 

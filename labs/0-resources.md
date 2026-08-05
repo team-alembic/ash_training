@@ -39,7 +39,7 @@ iex> Ash.Resource.Info.attributes(Twitter.Tweets.Tweet)
 
 ```elixir
 iex> Ash.Resource.Info.actions(Twitter.Tweets.Tweet)
-# [%Ash.Resource.Read{}]
+# [%Ash.Resource.Actions.Destroy{}, %Ash.Resource.Actions.Read{}]
 ```
 
 3. Add `Twitter.Tweets.Tweet` to our domain's (`Twitter.Tweets`) resource list. Ignore the extra content in the domain for module for now.
@@ -54,7 +54,7 @@ iex> Ash.Domain.Info.resources(Twitter.Tweets)
 5. Run the following to add the `AshPostgres` extension to the resource:
 
 ```bash
-mix ash.patch.extend Twitter.Tweets.Tweet postgres
+mix ash.extend Twitter.Tweets.Tweet postgres
 ```
 
 This command

@@ -13,8 +13,8 @@ defmodule Twitter.Application do
       TwitterWeb.Telemetry,
       Twitter.Repo,
       {DNSCluster, query: Application.get_env(:twitter, :dns_cluster_query) || :ignore},
-      {Phoenix.PubSub, name: Twitter.PubSub},
       # Start the Finch HTTP client for sending emails
+      {Phoenix.PubSub, name: Twitter.PubSub},
       {Finch, name: Twitter.Finch},
       TwitterWeb.Endpoint,
       {AshAuthentication.Supervisor, otp_app: :twitter}

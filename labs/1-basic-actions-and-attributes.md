@@ -26,7 +26,7 @@ actions do
 end
 ```
 
-3. Now, we're going to handle the creation in the UI. Add this to your `form_component.ex`.
+3. Now, we're going to handle the creation in the UI. Add this to your `lib/twitter_web/live/tweet_live/form.ex`.
 
 Replace this code:
 
@@ -63,7 +63,7 @@ attribute :text, :string
 accept [:text]
 ```
 
-8. Add the following inside of the `<.simple_form>`, above the `<:actions>` template in `form_component.ex`.
+8. Add the following inside of the `<.form>`, above the `<footer>` element in `lib/twitter_web/live/tweet_live/form.ex`.
 
 ```diff
 <.input label="Text" type="textarea" name="tweet[text]" value={@tweet && @tweet.text} />
@@ -81,7 +81,7 @@ Now you can create a tweet with some text!
 
 10. Next, add an `:update` action that accepts the `:text` as well.
 
-11. And add a handler for it in `form_component.ex`.
+11. And add a handler for it in `lib/twitter_web/live/tweet_live/form.ex`.
 
 Notice how the existing code for handling a `create` passes in the resource `Twitter.Tweets.Tweet` as its first argument.
 For updates, however, we pass the record being updated.
@@ -101,7 +101,8 @@ socket.assigns.tweet
 |> Ash.update()
 ```
 
-12. Finally, we can add a `:destroy` action. This is a simple action that needs no options or configuration. Once that is done, you'll be able to destroy a tweet.
+12. The `:destroy` action was generated in Lab 0, so deleting tweets now works
+    without any additional resource changes.
 
 ## Try on your own
 

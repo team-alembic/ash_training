@@ -10,7 +10,9 @@ defmodule Twitter.MixProject do
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),
-      deps: deps()
+      deps: deps(),
+      listeners: [Phoenix.CodeReloader],
+      compilers: [:phoenix_live_view] ++ Mix.compilers()
     ]
   end
 
@@ -35,29 +37,21 @@ defmodule Twitter.MixProject do
     [
       # Ash
       {:ash, "~> 3.0"},
-      {:ash_postgres, "~> 2.0"},
-      {:ash_phoenix, "~> 2.0"},
-      {:ash_admin, "~> 0.11"},
+      {:ash_admin, "~> 1.0"},
       {:ash_authentication, "~> 4.0"},
       {:ash_authentication_phoenix, "~> 2.0"},
       {:ash_graphql, "~> 1.0"},
       {:ash_json_api, "~> 1.0"},
-      {:picosat_elixir, "~> 0.2"},
-      {:open_api_spex, "~> 3.16"},
+      {:ash_phoenix, "~> 2.0"},
+      {:ash_postgres, "~> 2.0"},
       {:redoc_ui_plug, "~> 0.2"},
-      {:ecto_dev_logger, "~> 0.10"},
+      {:open_api_spex, "~> 3.16"},
       # Phoenix Default Dependencies
-      {:phoenix, "~> 1.7.11"},
-      {:phoenix_ecto, "~> 4.4"},
+      {:bandit, "~> 1.5"},
+      {:dns_cluster, "~> 0.2"},
       {:ecto_sql, "~> 3.10"},
-      {:postgrex, ">= 0.0.0"},
-      {:phoenix_html, "~> 4.0"},
-      {:phoenix_live_reload, "~> 1.2", only: :dev},
-      {:phoenix_live_view, "~> 0.20.2"},
-      {:floki, ">= 0.30.0", only: :test},
-      {:phoenix_live_dashboard, "~> 0.8.3"},
-      {:esbuild, "~> 0.8", runtime: Mix.env() == :dev},
-      {:tailwind, "~> 0.2", runtime: Mix.env() == :dev},
+      {:esbuild, "~> 0.10", runtime: Mix.env() == :dev},
+      {:gettext, "~> 1.0"},
       {:heroicons,
        github: "tailwindlabs/heroicons",
        tag: "v2.1.1",
@@ -65,14 +59,22 @@ defmodule Twitter.MixProject do
        app: false,
        compile: false,
        depth: 1},
+      {:igniter, "~> 0.8", only: :dev},
+      {:jason, "~> 1.2"},
+      {:lazy_html, ">= 0.0.0", only: :test},
+      {:phoenix, "~> 1.8"},
+      {:phoenix_ecto, "~> 4.5"},
+      {:phoenix_html, "~> 4.1"},
+      {:phoenix_live_dashboard, "~> 0.8.3"},
+      {:phoenix_live_reload, "~> 1.2", only: :dev},
+      {:phoenix_live_view, "~> 1.0"},
+      {:picosat_elixir, "~> 0.2"},
+      {:postgrex, ">= 0.0.0"},
       {:swoosh, "~> 1.5"},
-      {:finch, "~> 0.13"},
+      {:tailwind, "~> 0.5", runtime: Mix.env() == :dev},
       {:telemetry_metrics, "~> 1.0"},
       {:telemetry_poller, "~> 1.0"},
-      {:gettext, "~> 0.20"},
-      {:jason, "~> 1.2"},
-      {:dns_cluster, "~> 0.1.1"},
-      {:bandit, "~> 1.2"}
+      {:ecto_dev_logger, "~> 0.10"}
     ]
   end
 

@@ -4,39 +4,24 @@ defmodule TwitterWeb.TweetLive.Show do
   @impl true
   def render(assigns) do
     ~H"""
-    <.header>
-      Tweet <%= @tweet.id %>
-      <:subtitle>This is a tweet record from your database.</:subtitle>
+    <Layouts.app flash={@flash}>
+      <.header>
+        Tweet {@tweet.id}
+        <:subtitle>This is a tweet record from your database.</:subtitle>
+        <:actions>
+          <.button navigate={~p"/"}>
+            <.icon name="hero-arrow-left" />
+          </.button>
+          <.button variant="primary" navigate={~p"/tweets/#{@tweet}/edit?return_to=show"}>
+            <.icon name="hero-pencil-square" /> Edit tweet
+          </.button>
+        </:actions>
+      </.header>
 
-      <:actions>
-        <.link patch={~p"/tweets/#{@tweet}/show/edit"} phx-click={JS.push_focus()}>
-          <.button>Edit tweet</.button>
-        </.link>
-      </:actions>
-    </.header>
-
-    <.list>
-      <:item title="Id"><%= @tweet.id %></:item>
-    </.list>
-
-    <.back navigate={~p"/"}>Back to tweets</.back>
-
-    <.modal
-      :if={@live_action == :edit}
-      id="tweet-modal"
-      show
-      on_cancel={JS.patch(~p"/tweets/#{@tweet}")}
-    >
-      <.live_component
-        module={TwitterWeb.TweetLive.FormComponent}
-        id={@tweet.id}
-        title={@page_title}
-        action={@live_action}
-        current_user={@current_user}
-        tweet={@tweet}
-        patch={~p"/tweets/#{@tweet}"}
-      />
-    </.modal>
+      <.list>
+        <:item title="Text">{@tweet.text}</:item>
+      </.list>
+    </Layouts.app>
     """
   end
 
@@ -54,5 +39,4 @@ defmodule TwitterWeb.TweetLive.Show do
   end
 
   defp page_title(:show), do: "Show Tweet"
-  defp page_title(:edit), do: "Edit Tweet"
 end

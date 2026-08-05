@@ -1,5 +1,36 @@
 # Twitter
 
+## Lab branches
+
+Each lab has a branch that contains the **starting point** for that lab — which
+also means it contains the solutions for all previous labs:
+
+- `lab-00-resources` … `lab-14-ash-ai-reactor` — starting points for labs 0–14
+  (see `labs/`)
+- `final-solution` — everything solved, including lab 14
+
+To start (or catch up at) lab N, check out its branch, e.g.:
+
+```bash
+git checkout lab-06-policies
+mix setup
+```
+
+The branches form one linear history: each lab's solution is a single commit on
+top of the previous branch.
+
+### Maintaining the branches
+
+To fix something in an earlier lab, edit that lab's solution commit with an
+interactive rebase and let `--update-refs` carry all later lab branches along:
+
+```bash
+git rebase -i --update-refs lab-00-resources~1 final-solution
+```
+
+If a fix changes a resource's database shape, regenerate the migrations of the
+affected lab commit (and any later ones) with `mix ash.codegen` as you go.
+
 ## Setup
 
 To get started, you will want to ensure that you have

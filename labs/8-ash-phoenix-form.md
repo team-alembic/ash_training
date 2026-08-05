@@ -9,7 +9,7 @@
 1.  We can simplify a lot of our form code using `AshPhoenix.Form`.
     We get error handling, automatic setting of values, and more.
 
-2.  To start, we will add this `assign_form/1` helper to the bottom of `form_component.ex`.
+2.  To start, we will add this `assign_form/1` helper to the bottom of `lib/twitter_web/live/tweet_live/form.ex`.
 
 ```elixir
 defp assign_form(%{assigns: %{tweet: tweet}} = socket) do
@@ -30,15 +30,24 @@ defp assign_form(%{assigns: %{tweet: tweet}} = socket) do
 end
 ```
 
-3. Then we can call it from our `update/2` handler. Replace your `update/2` function with the following code:
+3. Then we can call it at the end of each `apply_action/3` clause. Replace your `apply_action/3` functions with the following code:
 
 ```elixir
-@impl true
-def update(assigns, socket) do
-  {:ok,
-   socket
-   |> assign(assigns)
-   |> assign_form()}
+defp apply_action(socket, :edit, %{"id" => id}) do
+  socket
+  |> assign(:page_title, "Edit Tweet")
+  |> assign(
+    :tweet,
+    Twitter.Tweets.get_tweet!(id, actor: socket.assigns.current_user)
+  )
+  |> assign_form()
+end
+
+defp apply_action(socket, :new, _params) do
+  socket
+  |> assign(:page_title, "New Tweet")
+  |> assign(:tweet, nil)
+  |> assign_form()
 end
 ```
 
@@ -49,13 +58,11 @@ To do this, we'll change our `"save"` event handler to the following. Notice how
 ```elixir
 def handle_event("save", %{"tweet" => tweet_params}, socket) do
   case AshPhoenix.Form.submit(socket.assigns.form, params: tweet_params) do
-    {:ok, tweet} ->
-      notify_parent({:saved, tweet})
-
+    {:ok, _tweet} ->
       socket =
         socket
         |> put_flash(:info, "Tweet #{socket.assigns.form.source.type}d successfully")
-        |> push_patch(to: socket.assigns.patch)
+        |> push_navigate(to: ~p"/")
 
       {:noreply, socket}
 
@@ -65,21 +72,16 @@ def handle_event("save", %{"tweet" => tweet_params}, socket) do
 end
 ```
 
-5. Then, we can modify our `<.simple_form >` to use this form.
+5. Then, we can modify our `<.form>` to use this form.
 
 ```elixir
-<.simple_form
-  for={@form}
-  id="tweet-form"
-  phx-target={@myself}
-  phx-submit="save"
-  phx-change="validate"
->
+<.form for={@form} id="tweet-form" phx-submit="save" phx-change="validate">
   <.input label="Text" type="textarea" field={@form[:text]} />
-  <:actions>
-    <.button phx-disable-with="Saving...">Save Tweet</.button>
-  </:actions>
-</.simple_form>
+  <footer>
+    <.button phx-disable-with="Saving..." variant="primary">Save Tweet</.button>
+    <.button navigate={~p"/"}>Cancel</.button>
+  </footer>
+</.form>
 ```
 
 Notice how we've added `phx-change="validate"`

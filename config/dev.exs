@@ -1,5 +1,6 @@
 import Config
 
+config :phoenix_live_view, debug_attributes: true
 config :ash, :policies, show_policy_breakdowns?: true
 
 # Configure your database
@@ -75,7 +76,7 @@ config :twitter, TwitterWeb.Endpoint,
 config :twitter, dev_routes: true
 
 # Do not include metadata nor timestamps in development logs
-config :logger, :console, format: "[$level] $message\n"
+config :logger, :default_formatter, format: "[$level] $message\n"
 
 # Set a higher stacktrace during development. Avoid configuring such
 # in production as building large stacktraces may be expensive.
@@ -85,7 +86,7 @@ config :phoenix, :stacktrace_depth, 20
 config :phoenix, :plug_init_mode, :runtime
 
 # Include HEEx debug annotations as HTML comments in rendered markup
-config :phoenix_live_view, :debug_heex_annotations, true
+config :phoenix_live_view, debug_heex_annotations: true, debug_attributes: true
 
 # Disable swoosh api client as it is only required for production adapters.
 config :swoosh, :api_client, false
