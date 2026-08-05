@@ -24,16 +24,16 @@ defmodule Twitter.Tweets.TweetTest do
     tweet = Ash.create!(Tweet, %{text: "first"}, action: :create, actor: user)
     assert tweet.text == "first"
 
-    tweet = Ash.update!(tweet, %{text: "updated"}, action: :update)
+    tweet = Ash.update!(tweet, %{text: "updated"}, action: :update, actor: user)
     assert tweet.text == "updated"
 
-    assert :ok = Ash.destroy!(tweet)
+    assert :ok = Ash.destroy!(tweet, actor: user)
     assert {:ok, nil} = Ash.get(Tweet, tweet.id, not_found_error?: false)
   end
 
   test "relates the actor as the required author", %{user: user} do
     tweet = Ash.create!(Tweet, %{text: "owned"}, action: :create, actor: user)
-    tweet = Ash.load!(tweet, :user)
+    tweet = Ash.load!(tweet, :user, actor: user)
 
     assert tweet.user.id == user.id
   end
@@ -59,7 +59,7 @@ defmodule Twitter.Tweets.TweetTest do
     tweet = Ash.create!(Tweet, %{text: "temporary"}, action: :create, actor: user)
     Ash.create!(Like, %{tweet_id: tweet.id}, action: :like, actor: user)
 
-    Ash.destroy!(tweet)
+    Ash.destroy!(tweet, actor: user)
 
     assert Ash.read!(Like) == []
   end
@@ -92,6 +92,24 @@ defmodule Twitter.Tweets.TweetTest do
 
     assert tweet.like_count == 1
     assert to_string(tweet.user_email) == to_string(user.email)
+  end
+
+  test "only the author can update or destroy a tweet", %{user: user} do
+    other_user = seed_user()
+    tweet = Ash.create!(Tweet, %{text: "private mutation"}, action: :create, actor: user)
+
+    assert Ash.can?({tweet, :update}, user)
+    assert Ash.can?({tweet, :destroy}, user)
+    refute Ash.can?({tweet, :update}, other_user)
+    refute Ash.can?({tweet, :destroy}, other_user)
+
+    assert_raise Ash.Error.Forbidden, fn ->
+      Ash.update!(tweet, %{text: "hijacked"}, action: :update, actor: other_user)
+    end
+
+    assert_raise Ash.Error.Forbidden, fn ->
+      Ash.destroy!(tweet, actor: other_user)
+    end
   end
 
   defp seed_user do

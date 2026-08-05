@@ -12,9 +12,11 @@ defmodule TwitterWeb.TweetLive.Show do
           <.button navigate={~p"/"}>
             <.icon name="hero-arrow-left" />
           </.button>
-          <.button variant="primary" navigate={~p"/tweets/#{@tweet}/edit?return_to=show"}>
-            <.icon name="hero-pencil-square" /> Edit tweet
-          </.button>
+          <%= if Ash.can?({@tweet, :update}, @current_user) do %>
+            <.button variant="primary" navigate={~p"/tweets/#{@tweet}/edit?return_to=show"}>
+              <.icon name="hero-pencil-square" /> Edit tweet
+            </.button>
+          <% end %>
         </:actions>
       </.header>
 

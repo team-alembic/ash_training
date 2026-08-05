@@ -40,6 +40,16 @@ defmodule Twitter.Accounts.User do
     end
   end
 
+  field_policies do
+    field_policy :email do
+      authorize_if expr(id == ^actor(:id))
+    end
+
+    field_policy :* do
+      authorize_if always()
+    end
+  end
+
   attributes do
     uuid_primary_key :id
 
