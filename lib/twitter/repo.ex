@@ -2,7 +2,7 @@ defmodule Twitter.Repo do
   use AshPostgres.Repo, otp_app: :twitter
 
   def installed_extensions do
-    ["citext", "ash-functions"]
+    ["citext", "ash-functions", "vector"]
   end
 
   def min_pg_version do

@@ -148,9 +148,29 @@ defmodule Twitter.Tweets.TweetTest do
     tools = AshAi.Info.tools(Twitter.Tweets)
 
     assert MapSet.subset?(
-             MapSet.new([:read_feed, :read_tweet, :create_tweet, :like_tweet, :unlike_tweet]),
+             MapSet.new([
+               :read_feed,
+               :read_tweet,
+               :semantic_search_tweets,
+               :create_tweet,
+               :like_tweet,
+               :unlike_tweet
+             ]),
              MapSet.new(tools, & &1.name)
            )
+  end
+
+  test "vectorizes one full-text field without a recurring scheduler" do
+    assert AshAi.Info.vectorize_attributes!(Tweet) == []
+
+    assert [%AshAi.FullText{name: :full_text_vector, used_attributes: [:text]}] =
+             AshAi.Info.vectorize(Tweet)
+
+    assert [%AshOban.Trigger{name: :ash_ai_update_embeddings, scheduler_cron: false}] =
+             AshOban.Info.oban_triggers(Tweet)
+
+    semantic_search = Ash.Resource.Info.action(Tweet, :semantic_search)
+    assert Enum.any?(semantic_search.arguments, &(&1.name == :limit and &1.default == 10))
   end
 
   defp seed_user do

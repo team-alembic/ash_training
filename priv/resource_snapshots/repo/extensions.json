@@ -2,6 +2,7 @@
   "ash_functions_version": 6,
   "installed": [
     "citext",
-    "ash-functions"
+    "ash-functions",
+    "vector"
   ]
 }

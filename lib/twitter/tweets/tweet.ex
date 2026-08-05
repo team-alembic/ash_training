@@ -4,7 +4,37 @@ defmodule Twitter.Tweets.Tweet do
     domain: Twitter.Tweets,
     data_layer: AshPostgres.DataLayer,
     authorizers: [Ash.Policy.Authorizer],
-    extensions: [AshGraphql.Resource, AshJsonApi.Resource, AshLua.Resource]
+    extensions: [AshGraphql.Resource, AshJsonApi.Resource, AshLua.Resource, AshAi, AshOban]
+
+  vectorize do
+    full_text do
+      text fn tweet ->
+        """
+        Tweet: #{tweet.text}
+        """
+      end
+
+      used_attributes [:text]
+    end
+
+    embedding_model {AshAi.EmbeddingModels.ReqLLM,
+                     model: "openai:text-embedding-3-small", dimensions: 1536}
+
+    strategy :ash_oban
+  end
+
+  oban do
+    triggers do
+      trigger :ash_ai_update_embeddings do
+        action :ash_ai_update_embeddings
+        queue :tweet_vectorizer
+        scheduler_cron false
+        worker_read_action :read
+        worker_module_name Twitter.Tweets.Tweet.AshOban.Worker.AshAiUpdateEmbeddings
+        scheduler_module_name Twitter.Tweets.Tweet.AshOban.Scheduler.AshAiUpdateEmbeddings
+      end
+    end
+  end
 
   attributes do
     uuid_primary_key :id
@@ -36,14 +66,91 @@ defmodule Twitter.Tweets.Tweet do
     read :feed do
       prepare build(sort: [inserted_at: :desc])
     end
+
+    read :semantic_search do
+      argument :query, :string, allow_nil?: false
+      argument :limit, :integer, allow_nil?: false, default: 10, constraints: [min: 1, max: 100]
+
+      prepare fn query, _context ->
+        search_text = Ash.Query.get_argument(query, :query)
+        limit = Ash.Query.get_argument(query, :limit)
+
+        case AshAi.EmbeddingModels.ReqLLM.generate([search_text],
+               model: "openai:text-embedding-3-small",
+               dimensions: 1536
+             ) do
+          {:ok, [search_vector]} ->
+            query
+            |> Ash.Query.sort(
+              {calc(vector_cosine_distance(full_text_vector, ^search_vector), type: :float), :asc}
+            )
+            |> Ash.Query.limit(limit)
+
+          {:error, error} ->
+            Ash.Query.add_error(query, error)
+        end
+      end
+    end
+
+    action :ask, :string do
+      argument :question, :string do
+        allow_nil? false
+        description "The question to ask about tweets"
+      end
+
+      argument :limit, :integer do
+        default 3
+        description "Number of context tweets to retrieve"
+      end
+
+      argument :context, :string do
+        public? false
+        allow_nil? true
+      end
+
+      prepare fn input, context ->
+        question = input.arguments.question
+        limit = input.arguments.limit
+
+        context_tweets =
+          Twitter.Tweets.Tweet
+          |> Ash.Query.for_read(:semantic_search, %{query: question, limit: limit})
+          |> Ash.read!(scope: context)
+          |> Enum.map(fn tweet ->
+            "- \"#{tweet.text}\""
+          end)
+
+        Ash.ActionInput.set_argument(input, :context, Enum.join(context_tweets, "\n"))
+      end
+
+      run prompt("openai:gpt-4o-mini",
+            prompt: """
+            You are a helpful assistant answering questions about tweets.
+
+            Here are some relevant tweets from our database:
+
+            <%= @input.arguments.context %>
+
+            User's question: <%= @input.arguments.question %>
+
+            Please provide a helpful, concise answer based on the tweets above.
+            If the tweets don't contain relevant information, acknowledge that
+            and provide a general response.
+            """
+          )
+    end
   end
 
   policies do
+    bypass action(:ash_ai_update_embeddings) do
+      authorize_if AshOban.Checks.AshObanInteraction
+    end
+
     policy action_type(:read) do
       authorize_if always()
     end
 
-    policy action(:create) do
+    policy action([:create, :ask]) do
       authorize_if always()
     end
 
@@ -78,6 +185,13 @@ defmodule Twitter.Tweets.Tweet do
   postgres do
     table "tweets"
     repo Twitter.Repo
+
+    custom_indexes do
+      index ["full_text_vector vector_cosine_ops"],
+        name: "tweets_full_text_vector_index",
+        using: "hnsw",
+        concurrently: true
+    end
   end
 
   relationships do
