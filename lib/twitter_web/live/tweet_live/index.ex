@@ -1,8 +1,6 @@
 defmodule TwitterWeb.TweetLive.Index do
   use TwitterWeb, :live_view
 
-  @tweet_loads [:text_length, :liked_by_me, :like_count, :user_email]
-
   @impl true
   def render(assigns) do
     ~H"""
@@ -85,39 +83,25 @@ defmodule TwitterWeb.TweetLive.Index do
      |> assign(:page_title, "Listing Tweets")
      |> stream(
        :tweets,
-       Ash.read!(Twitter.Tweets.Tweet,
-         actor: socket.assigns.current_user,
-         action: :feed,
-         load: @tweet_loads
-       )
+       Twitter.Tweets.feed!(actor: socket.assigns.current_user)
      )}
   end
 
   @impl true
   def handle_event("delete", %{"id" => id}, socket) do
-    Twitter.Tweets.Tweet
-    |> Ash.get!(id, action: :read)
-    |> Ash.Changeset.for_destroy(:destroy, %{}, actor: socket.assigns.current_user)
-    |> Ash.destroy!()
+    Twitter.Tweets.delete_tweet!(id, actor: socket.assigns.current_user)
 
     {:noreply, stream_delete(socket, :tweets, %{id: id})}
   end
 
   def handle_event("like", %{"id" => tweet_id}, socket) do
-    Twitter.Tweets.Like
-    |> Ash.Changeset.for_create(:like, %{tweet_id: tweet_id}, actor: socket.assigns.current_user)
-    |> Ash.create!()
+    Twitter.Tweets.like!(tweet_id, actor: socket.assigns.current_user)
 
     {:noreply, refetch_tweet(socket, tweet_id)}
   end
 
   def handle_event("unlike", %{"id" => tweet_id}, socket) do
-    Ash.bulk_destroy!(
-      Twitter.Tweets.Like,
-      :unlike,
-      %{tweet_id: tweet_id},
-      actor: socket.assigns.current_user
-    )
+    Twitter.Tweets.unlike!(tweet_id, actor: socket.assigns.current_user)
 
     {:noreply, refetch_tweet(socket, tweet_id)}
   end
@@ -126,7 +110,7 @@ defmodule TwitterWeb.TweetLive.Index do
     stream_insert(
       socket,
       :tweets,
-      Ash.get!(Twitter.Tweets.Tweet, id, actor: socket.assigns.current_user, load: @tweet_loads)
+      Twitter.Tweets.get_tweet!(id, actor: socket.assigns.current_user)
     )
   end
 end

@@ -27,7 +27,7 @@ defmodule TwitterWeb.TweetLive.Form do
   end
 
   defp apply_action(socket, :edit, %{"id" => id}) do
-    tweet = Ash.get!(Twitter.Tweets.Tweet, id, actor: socket.assigns.current_user)
+    tweet = Twitter.Tweets.get_tweet!(id, actor: socket.assigns.current_user)
 
     if Ash.can?({tweet, :update}, socket.assigns.current_user) do
       socket

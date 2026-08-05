@@ -37,7 +37,7 @@ defmodule TwitterWeb.TweetLive.Show do
     {:noreply,
      socket
      |> assign(:page_title, page_title(socket.assigns.live_action))
-     |> assign(:tweet, Ash.get!(Twitter.Tweets.Tweet, id, actor: socket.assigns.current_user))}
+     |> assign(:tweet, Twitter.Tweets.get_tweet!(id, actor: socket.assigns.current_user))}
   end
 
   defp page_title(:show), do: "Show Tweet"

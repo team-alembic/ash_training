@@ -112,6 +112,22 @@ defmodule Twitter.Tweets.TweetTest do
     end
   end
 
+  test "domain code interfaces cover feed, get, delete, like, and unlike", %{user: user} do
+    tweet = Ash.create!(Tweet, %{text: "interface"}, action: :create, actor: user)
+
+    assert [fetched] = Twitter.Tweets.feed!(actor: user)
+    assert fetched.id == tweet.id
+    assert Twitter.Tweets.get_tweet!(tweet.id, actor: user).id == tweet.id
+
+    like = Twitter.Tweets.like!(tweet.id, actor: user)
+    assert like.tweet_id == tweet.id
+
+    Twitter.Tweets.unlike!(tweet.id, actor: user)
+    assert Ash.read!(Like) == []
+
+    assert :ok = Twitter.Tweets.delete_tweet!(tweet.id, actor: user)
+  end
+
   defp seed_user do
     Ash.Seed.seed!(Twitter.Accounts.User, %{
       email: "user-#{System.unique_integer([:positive])}@example.com",
