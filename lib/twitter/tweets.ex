@@ -1,6 +1,6 @@
 defmodule Twitter.Tweets do
   use Ash.Domain,
-    extensions: [AshJsonApi.Domain, AshAdmin.Domain]
+    extensions: [AshJsonApi.Domain, AshAdmin.Domain, AshPhoenix]
 
   admin do
     show? true
@@ -21,6 +21,9 @@ defmodule Twitter.Tweets do
         default_options: [load: [:text_length, :liked_by_me, :like_count, :user_email]]
 
       define :delete_tweet, action: :destroy
+
+      define :create_tweet, action: :create
+      define :update_tweet, action: :update
     end
 
     resource Twitter.Tweets.Like do
