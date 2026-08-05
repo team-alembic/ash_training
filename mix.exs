@@ -37,6 +37,11 @@ defmodule Twitter.MixProject do
     [
       {:ash_lua, "~> 0.2"},
       {:req_llm, "~> 1.18"},
+      {:oban, "~> 2.0"},
+      {:oban_web, "~> 2.0"},
+      {:lumis, "~> 0.1"},
+      {:mdex, "~> 0.7"},
+      {:ash_oban, "~> 0.4"},
       {:ash_ai, "~> 1.0"},
       # Ash
       {:ash, "~> 3.0"},

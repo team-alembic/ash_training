@@ -15,7 +15,8 @@ defmodule Twitter.Repo.Migrations.AddUserToTweetsAndLikes do
             name: "tweets_user_id_fkey",
             type: :uuid,
             prefix: "public"
-          ), null: false
+          ),
+          null: false
     end
 
     create table(:likes, primary_key: false) do
@@ -35,7 +36,8 @@ defmodule Twitter.Repo.Migrations.AddUserToTweetsAndLikes do
             name: "likes_tweet_id_fkey",
             type: :uuid,
             prefix: "public"
-          ), null: false
+          ),
+          null: false
 
       add :user_id,
           references(:users,
@@ -43,7 +45,8 @@ defmodule Twitter.Repo.Migrations.AddUserToTweetsAndLikes do
             name: "likes_user_id_fkey",
             type: :uuid,
             prefix: "public"
-          ), null: false
+          ),
+          null: false
     end
   end
 

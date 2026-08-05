@@ -56,6 +56,26 @@ defmodule Twitter.Tweets do
   end
 
   tools do
-    tool :read_feed, Twitter.Tweets.Tweet, :feed
+    tool :read_feed, Twitter.Tweets.Tweet, :feed do
+      description "Retrieve the feed of tweets. Returns a list of tweets with their text, user email, and like count."
+
+      # Load calculations/aggregates/relationships into the tool's response
+      load [:user_email, :like_count]
+
+      # Run synchronously instead of the default async execution
+      async false
+    end
+
+    tool :read_tweet, Twitter.Tweets.Tweet, :read do
+      description "Retrieve a list of tweets, also supports filtering, sorting, and more"
+    end
+
+    tool :create_tweet, Twitter.Tweets.Tweet, :create
+
+    tool :like_tweet, Twitter.Tweets.Like, :like
+
+    tool :unlike_tweet, Twitter.Tweets.Like, :unlike do
+      identity false
+    end
   end
 end

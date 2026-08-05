@@ -78,9 +78,24 @@ defmodule TwitterWeb.TweetLive.Index do
 
   @impl true
   def mount(_params, _session, socket) do
+    if connected?(socket) do
+      TwitterWeb.Endpoint.subscribe("tweet:liked")
+      TwitterWeb.Endpoint.subscribe("tweet:unliked")
+    end
+
     {:ok,
      socket
      |> assign(:page_title, "Listing Tweets")
+     |> stream(
+       :tweets,
+       Twitter.Tweets.feed!(actor: socket.assigns.current_user)
+     )}
+  end
+
+  @impl true
+  def handle_info(%{topic: "tweet:" <> _liked_or_unliked}, socket) do
+    {:noreply,
+     socket
      |> stream(
        :tweets,
        Twitter.Tweets.feed!(actor: socket.assigns.current_user)
