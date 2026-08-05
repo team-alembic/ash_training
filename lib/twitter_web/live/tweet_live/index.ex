@@ -1,6 +1,8 @@
 defmodule TwitterWeb.TweetLive.Index do
   use TwitterWeb, :live_view
 
+  @tweet_loads [user: [:email]]
+
   @impl true
   def render(assigns) do
     ~H"""
@@ -27,6 +29,10 @@ defmodule TwitterWeb.TweetLive.Index do
 
         <:col :let={{_id, tweet}} label="Text">
           {tweet.text}
+        </:col>
+
+        <:col :let={{_id, tweet}} label="Author">
+          {tweet.user.email}
         </:col>
 
         <:action :let={{_id, tweet}}>
@@ -57,7 +63,11 @@ defmodule TwitterWeb.TweetLive.Index do
      |> assign(:page_title, "Listing Tweets")
      |> stream(
        :tweets,
-       Ash.read!(Twitter.Tweets.Tweet, actor: socket.assigns.current_user, action: :read)
+       Ash.read!(Twitter.Tweets.Tweet,
+         actor: socket.assigns.current_user,
+         action: :read,
+         load: @tweet_loads
+       )
      )}
   end
 
