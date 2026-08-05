@@ -3,14 +3,17 @@ defmodule Twitter.Tweets.Tweet do
     otp_app: :twitter,
     domain: Twitter.Tweets,
     data_layer: AshPostgres.DataLayer,
-    authorizers: [Ash.Policy.Authorizer]
+    authorizers: [Ash.Policy.Authorizer],
+    extensions: [AshJsonApi.Resource]
 
   attributes do
     uuid_primary_key :id
 
-    attribute :text, :string
+    attribute :text, :string do
+      public? true
+    end
 
-    timestamps()
+    timestamps public?: true
   end
 
   actions do
@@ -56,7 +59,9 @@ defmodule Twitter.Tweets.Tweet do
   end
 
   aggregates do
-    count :like_count, :likes
+    count :like_count, :likes do
+      public? true
+    end
 
     first :user_email, :user, :email
 
@@ -81,6 +86,18 @@ defmodule Twitter.Tweets.Tweet do
 
     has_many :likers, Twitter.Accounts.User do
       through [:likes, :user]
+    end
+  end
+
+  json_api do
+    type "tweet"
+    field_names :camelize
+
+    routes do
+      base "/tweets"
+
+      index :feed
+      get :read, primary?: true
     end
   end
 end

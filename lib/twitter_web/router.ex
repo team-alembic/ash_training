@@ -16,6 +16,7 @@ defmodule TwitterWeb.Router do
   pipeline :api do
     plug :accepts, ["json"]
     plug :load_from_bearer
+    plug :set_actor, :user
   end
 
   pipeline :graphql do
