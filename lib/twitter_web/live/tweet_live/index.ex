@@ -1,7 +1,7 @@
 defmodule TwitterWeb.TweetLive.Index do
   use TwitterWeb, :live_view
 
-  @tweet_loads [user: [:email]]
+  @tweet_loads [:text_length, :liked_by_me, user: [:email]]
 
   @impl true
   def render(assigns) do
@@ -31,17 +31,24 @@ defmodule TwitterWeb.TweetLive.Index do
           {tweet.text}
         </:col>
 
+        <:col :let={{_id, tweet}} label="Length">
+          {tweet.text_length}
+        </:col>
+
         <:col :let={{_id, tweet}} label="Author">
           {tweet.user.email}
         </:col>
 
         <:action :let={{_id, tweet}}>
-          <button phx-click="like" phx-value-id={tweet.id}>
-            <.icon name="hero-arrow-up" />
-          </button>
-          <button phx-click="unlike" phx-value-id={tweet.id}>
-            <.icon name="hero-arrow-down" />
-          </button>
+          <%= if tweet.liked_by_me do %>
+            <button phx-click="unlike" phx-value-id={tweet.id}>
+              <.icon name="hero-heart-solid" class="text-red-600" />
+            </button>
+          <% else %>
+            <button phx-click="like" phx-value-id={tweet.id}>
+              <.icon name="hero-heart" />
+            </button>
+          <% end %>
         </:action>
 
         <:action :let={{_id, tweet}}>

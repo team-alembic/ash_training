@@ -31,6 +31,11 @@ defmodule Twitter.Tweets.Tweet do
     end
   end
 
+  calculations do
+    calculate :text_length, :integer, expr(string_length(text))
+    calculate :liked_by_me, :boolean, expr(exists(likes, user_id == ^actor(:id)))
+  end
+
   postgres do
     table "tweets"
     repo Twitter.Repo
