@@ -48,6 +48,7 @@ defmodule Twitter.Tweets do
       define :create_tweet, action: :create
       define :update_tweet, action: :update
       define :ask, action: :ask, args: [:question]
+      define :ask_tweet_reactor_question, action: :ask_with_reactor, args: [:question]
     end
 
     resource Twitter.Tweets.Like do

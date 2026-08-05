@@ -145,6 +145,69 @@ defmodule Twitter.Tweets.Tweet do
             """
           )
     end
+
+    action :reformulate_query, :string do
+      argument :question, :string do
+        allow_nil? false
+        description "The original user question"
+      end
+
+      run prompt("openai:gpt-4o-mini",
+            prompt: """
+            You are an expert at reformulating questions into effective search queries.
+
+            User's question: <%= @input.arguments.question %>
+
+            Generate a concise search query (2-5 keywords) that will find the most
+            relevant tweets to answer this question. Return ONLY the search query,
+            nothing else.
+
+            Examples:
+            Question: "What are people saying about Elixir's performance?"
+            Query: "Elixir performance speed fast"
+
+            Question: "How does Phoenix compare to Rails?"
+            Query: "Phoenix Rails comparison framework"
+            """
+          )
+    end
+
+    action :answer_with_context, :string do
+      argument :question, :string do
+        allow_nil? false
+        description "The question to answer"
+      end
+
+      argument :context, :string do
+        allow_nil? false
+        description "Pre-built context from semantic search"
+      end
+
+      run prompt("openai:gpt-4o-mini",
+            prompt: """
+            You are a helpful assistant answering questions about tweets.
+
+            Here are some relevant tweets from our database:
+
+            <%= @input.arguments.context %>
+
+            User's question: <%= @input.arguments.question %>
+
+            Please provide a helpful, concise answer based on the tweets above.
+            """
+          )
+    end
+
+    action :ask_with_reactor, :map do
+      argument :question, :string, allow_nil?: false
+
+      argument :limit, :integer,
+        allow_nil?: false,
+        default: 5,
+        constraints: [min: 1, max: 100]
+
+      run Twitter.Ai.RagReactor
+    end
   end
 
   policies do
@@ -156,7 +219,7 @@ defmodule Twitter.Tweets.Tweet do
       authorize_if always()
     end
 
-    policy action([:create, :ask]) do
+    policy action([:create, :ask, :reformulate_query, :answer_with_context, :ask_with_reactor]) do
       authorize_if always()
     end
 
