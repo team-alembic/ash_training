@@ -22,6 +22,7 @@ defmodule Twitter.Tweets do
     namespace "tweets" do
       action :feed, Twitter.Tweets.Tweet, :feed, labels: [:agent, :read_only]
       action :list, Twitter.Tweets.Tweet, :read, labels: [:agent, :read_only]
+      action :search, Twitter.Tweets.Tweet, :semantic_search, labels: [:agent, :read_only]
       action :create, Twitter.Tweets.Tweet, :create, labels: [:agent]
     end
 
@@ -46,6 +47,7 @@ defmodule Twitter.Tweets do
 
       define :create_tweet, action: :create
       define :update_tweet, action: :update
+      define :ask, action: :ask, args: [:question]
     end
 
     resource Twitter.Tweets.Like do
@@ -68,6 +70,10 @@ defmodule Twitter.Tweets do
 
     tool :read_tweet, Twitter.Tweets.Tweet, :read do
       description "Retrieve a list of tweets, also supports filtering, sorting, and more"
+    end
+
+    tool :semantic_search_tweets, Twitter.Tweets.Tweet, :semantic_search do
+      description "Perform a semantic search over tweets based on a query string"
     end
 
     tool :create_tweet, Twitter.Tweets.Tweet, :create
