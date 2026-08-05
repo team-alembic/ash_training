@@ -12,5 +12,6 @@ defmodule Twitter.Tweets do
 
   resources do
     resource Twitter.Tweets.Tweet
+    resource Twitter.Tweets.Like
   end
 end
