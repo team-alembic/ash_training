@@ -13,11 +13,21 @@ defmodule Twitter.Tweets.Tweet do
     defaults [:read, :destroy]
 
     create :create do
-      accept [:text, :user_id]
+      accept [:text]
+
+      change relate_actor(:user)
+
+      validate string_length(:text, max: 255)
     end
 
     update :update do
       accept [:text]
+
+      validate string_length(:text, max: 255)
+    end
+
+    read :feed do
+      prepare build(sort: [inserted_at: :desc])
     end
   end
 
