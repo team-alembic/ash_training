@@ -1,7 +1,7 @@
 defmodule TwitterWeb.TweetLive.Index do
   use TwitterWeb, :live_view
 
-  @tweet_loads [:text_length, :liked_by_me, user: [:email]]
+  @tweet_loads [:text_length, :liked_by_me, :like_count, :user_email]
 
   @impl true
   def render(assigns) do
@@ -36,7 +36,7 @@ defmodule TwitterWeb.TweetLive.Index do
         </:col>
 
         <:col :let={{_id, tweet}} label="Author">
-          {tweet.user.email}
+          {tweet.user_email}
         </:col>
 
         <:action :let={{_id, tweet}}>
@@ -49,6 +49,8 @@ defmodule TwitterWeb.TweetLive.Index do
               <.icon name="hero-heart" />
             </button>
           <% end %>
+
+          {tweet.like_count}
         </:action>
 
         <:action :let={{_id, tweet}}>
