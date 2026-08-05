@@ -128,6 +128,22 @@ defmodule Twitter.Tweets.TweetTest do
     assert :ok = Twitter.Tweets.delete_tweet!(tweet.id, actor: user)
   end
 
+  test "AshPhoenix forms submit actions and retain validation errors", %{user: user} do
+    form = AshPhoenix.Form.for_create(Tweet, :create, actor: user)
+
+    invalid_form =
+      AshPhoenix.Form.validate(form, %{"text" => String.duplicate("x", 256)}, errors: true)
+
+    refute invalid_form.valid?
+
+    assert {:ok, tweet} = AshPhoenix.Form.submit(form, params: %{"text" => "from a form"})
+    assert tweet.text == "from a form"
+
+    update_form = AshPhoenix.Form.for_update(tweet, :update, actor: user)
+    assert {:ok, updated} = AshPhoenix.Form.submit(update_form, params: %{"text" => "edited"})
+    assert updated.text == "edited"
+  end
+
   defp seed_user do
     Ash.Seed.seed!(Twitter.Accounts.User, %{
       email: "user-#{System.unique_integer([:positive])}@example.com",

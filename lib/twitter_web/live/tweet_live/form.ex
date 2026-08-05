@@ -10,8 +10,8 @@ defmodule TwitterWeb.TweetLive.Form do
         <:subtitle>Use this form to manage tweet records in your database.</:subtitle>
       </.header>
 
-      <.form for={%{}} as={:tweet} id="tweet-form" phx-submit="save">
-        <.input label="Text" type="textarea" name="tweet[text]" value={@tweet && @tweet.text} />
+      <.form for={@form} id="tweet-form" phx-submit="save" phx-change="validate">
+        <.input label="Text" type="textarea" field={@form[:text]} />
         <footer>
           <.button phx-disable-with="Saving..." variant="primary">Save Tweet</.button>
           <.button navigate={~p"/"}>Cancel</.button>
@@ -33,10 +33,12 @@ defmodule TwitterWeb.TweetLive.Form do
       socket
       |> assign(:page_title, "Edit Tweet")
       |> assign(:tweet, tweet)
+      |> assign_form()
     else
       socket
       |> assign(:page_title, "Edit Tweet")
       |> assign(:tweet, tweet)
+      |> assign_form()
       |> put_flash(:error, "You are not allowed to edit this tweet.")
       |> push_navigate(to: ~p"/tweets/#{tweet}")
     end
@@ -46,36 +48,43 @@ defmodule TwitterWeb.TweetLive.Form do
     socket
     |> assign(:page_title, "New Tweet")
     |> assign(:tweet, nil)
+    |> assign_form()
   end
 
   @impl true
-  def handle_event("save", params, socket) do
-    result =
-      if socket.assigns.tweet do
-        socket.assigns.tweet
-        |> Ash.Changeset.for_update(:update, params["tweet"] || %{},
-          actor: socket.assigns.current_user
-        )
-        |> Ash.update()
-      else
-        Twitter.Tweets.Tweet
-        |> Ash.Changeset.for_create(:create, params["tweet"] || %{},
-          actor: socket.assigns.current_user
-        )
-        |> Ash.create()
-      end
-
-    case result do
+  def handle_event("save", %{"tweet" => tweet_params}, socket) do
+    case AshPhoenix.Form.submit(socket.assigns.form, params: tweet_params) do
       {:ok, _tweet} ->
         socket =
           socket
-          |> put_flash(:info, "Success!")
+          |> put_flash(:info, "Tweet #{socket.assigns.form.source.type}d successfully")
           |> push_navigate(to: ~p"/")
 
         {:noreply, socket}
 
-      {:error, error} ->
-        {:noreply, put_flash(socket, :error, "Error!: #{Exception.format(:error, error)}")}
+      {:error, form} ->
+        {:noreply, assign(socket, form: form)}
     end
+  end
+
+  def handle_event("validate", %{"tweet" => tweet_params}, socket) do
+    {:noreply, assign(socket, form: AshPhoenix.Form.validate(socket.assigns.form, tweet_params))}
+  end
+
+  defp assign_form(%{assigns: %{tweet: tweet}} = socket) do
+    form =
+      if tweet do
+        Twitter.Tweets.form_to_update_tweet(tweet,
+          as: "tweet",
+          actor: socket.assigns.current_user
+        )
+      else
+        Twitter.Tweets.form_to_create_tweet(
+          as: "tweet",
+          actor: socket.assigns.current_user
+        )
+      end
+
+    assign(socket, form: to_form(form))
   end
 end
