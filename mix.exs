@@ -36,7 +36,13 @@ defmodule Twitter.MixProject do
   defp deps do
     [
       {:ash_lua, "~> 0.1"},
+      {:oban, "~> 2.0"},
+      {:oban_web, "~> 2.0"},
+      {:lumis, "~> 0.1"},
+      {:mdex, "~> 0.7"},
+      {:ash_oban, "~> 0.4"},
       {:ash_ai, "~> 1.1"},
+      {:req_llm, "~> 1.24"},
       # Ash
       {:ash, "~> 3.0"},
       {:ash_admin, "~> 1.0"},

@@ -1,5 +1,6 @@
 import Config
 
+config :twitter, Oban, testing: :manual
 config :ash, :policies, show_policy_breakdowns?: true
 
 # Configure your database

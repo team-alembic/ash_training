@@ -36,8 +36,16 @@ Before starting, you'll need:
 ### 1. Configure OpenAI API Key
 
 AshAi's chat feature talks to LLM providers via
-[ReqLLM](https://hexdocs.pm/req_llm). The chat generator (next step) adds the
-required configuration to `config/runtime.exs` for you:
+[ReqLLM](https://hexdocs.pm/req_llm). Since ash_ai 1.0, `req_llm` is an
+*optional* dependency of ash_ai, so installing ash_ai does not bring it along —
+add it to `deps/0` in `mix.exs` yourself:
+
+```elixir
+{:req_llm, "~> 1.24"},
+```
+
+The chat generator (next step) adds the required configuration to
+`config/runtime.exs` for you:
 
 ```elixir
 config :req_llm, openai_api_key: System.get_env("OPENAI_API_KEY")

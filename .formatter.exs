@@ -1,6 +1,8 @@
 [
   import_deps: [
     :ash_lua,
+    :ash_oban,
+    :oban,
     :ash_ai,
     :ecto,
     :ecto_sql,

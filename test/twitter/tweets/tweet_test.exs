@@ -144,11 +144,13 @@ defmodule Twitter.Tweets.TweetTest do
     assert updated.text == "edited"
   end
 
-  test "exposes the tweet feed as a tool" do
+  test "exposes the declared tweet and like tools" do
     tools = AshAi.Info.tools(Twitter.Tweets)
 
-    assert %AshAi.Tool{resource: Tweet, action: :feed} =
-             Enum.find(tools, &(&1.name == :read_feed))
+    assert MapSet.subset?(
+             MapSet.new([:read_feed, :read_tweet, :create_tweet, :like_tweet, :unlike_tweet]),
+             MapSet.new(tools, & &1.name)
+           )
   end
 
   defp seed_user do
