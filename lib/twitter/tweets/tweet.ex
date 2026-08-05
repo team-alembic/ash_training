@@ -4,7 +4,7 @@ defmodule Twitter.Tweets.Tweet do
     domain: Twitter.Tweets,
     data_layer: AshPostgres.DataLayer,
     authorizers: [Ash.Policy.Authorizer],
-    extensions: [AshJsonApi.Resource]
+    extensions: [AshGraphql.Resource, AshJsonApi.Resource]
 
   attributes do
     uuid_primary_key :id
@@ -63,7 +63,9 @@ defmodule Twitter.Tweets.Tweet do
       public? true
     end
 
-    first :user_email, :user, :email
+    first :user_email, :user, :email do
+      public? true
+    end
 
     count :like_count_today, :likes do
       filter expr(inserted_at >= ago(1, :day))
@@ -98,6 +100,15 @@ defmodule Twitter.Tweets.Tweet do
 
       index :feed
       get :read, primary?: true
+    end
+  end
+
+  graphql do
+    type :tweet
+    filterable_fields [:text, like_count: [:eq, :greater_than]]
+
+    queries do
+      list :feed, :feed
     end
   end
 end
