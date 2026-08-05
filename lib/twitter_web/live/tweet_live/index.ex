@@ -36,6 +36,15 @@ defmodule TwitterWeb.TweetLive.Index do
         </:col>
 
         <:action :let={{_id, tweet}}>
+          <button phx-click="like" phx-value-id={tweet.id}>
+            <.icon name="hero-arrow-up" />
+          </button>
+          <button phx-click="unlike" phx-value-id={tweet.id}>
+            <.icon name="hero-arrow-down" />
+          </button>
+        </:action>
+
+        <:action :let={{_id, tweet}}>
           <div class="sr-only">
             <.link navigate={~p"/tweets/#{tweet}"}>Show</.link>
           </div>
@@ -65,7 +74,7 @@ defmodule TwitterWeb.TweetLive.Index do
        :tweets,
        Ash.read!(Twitter.Tweets.Tweet,
          actor: socket.assigns.current_user,
-         action: :read,
+         action: :feed,
          load: @tweet_loads
        )
      )}
@@ -81,11 +90,30 @@ defmodule TwitterWeb.TweetLive.Index do
     {:noreply, stream_delete(socket, :tweets, %{id: id})}
   end
 
-  # defp refetch_tweet(socket, id) do
-  #   stream_insert(
-  #     socket,
-  #     :tweets,
-  #     Ash.get!(Twitter.Tweets.Tweet, id, actor: socket.assigns.current_user, load: @tweet_loads)
-  #   )
-  # end
+  def handle_event("like", %{"id" => tweet_id}, socket) do
+    Twitter.Tweets.Like
+    |> Ash.Changeset.for_create(:like, %{tweet_id: tweet_id}, actor: socket.assigns.current_user)
+    |> Ash.create!()
+
+    {:noreply, refetch_tweet(socket, tweet_id)}
+  end
+
+  def handle_event("unlike", %{"id" => tweet_id}, socket) do
+    Ash.bulk_destroy!(
+      Twitter.Tweets.Like,
+      :unlike,
+      %{tweet_id: tweet_id},
+      actor: socket.assigns.current_user
+    )
+
+    {:noreply, refetch_tweet(socket, tweet_id)}
+  end
+
+  defp refetch_tweet(socket, id) do
+    stream_insert(
+      socket,
+      :tweets,
+      Ash.get!(Twitter.Tweets.Tweet, id, actor: socket.assigns.current_user, load: @tweet_loads)
+    )
+  end
 end

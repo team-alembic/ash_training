@@ -1,16 +1,11 @@
 defmodule Twitter.Tweets.TweetTest do
   use Twitter.DataCase, async: true
 
+  alias Twitter.Tweets.Like
   alias Twitter.Tweets.Tweet
 
   setup do
-    user =
-      Ash.Seed.seed!(Twitter.Accounts.User, %{
-        email: "user-#{System.unique_integer([:positive])}@example.com",
-        hashed_password: "not-used-in-tests"
-      })
-
-    %{user: user}
+    %{user: seed_user()}
   end
 
   test "defines the generated resource in the Tweets domain" do
@@ -26,7 +21,7 @@ defmodule Twitter.Tweets.TweetTest do
   end
 
   test "creates, updates, and destroys a tweet", %{user: user} do
-    tweet = Ash.create!(Tweet, %{text: "first", user_id: user.id}, action: :create)
+    tweet = Ash.create!(Tweet, %{text: "first"}, action: :create, actor: user)
     assert tweet.text == "first"
 
     tweet = Ash.update!(tweet, %{text: "updated"}, action: :update)
@@ -36,10 +31,50 @@ defmodule Twitter.Tweets.TweetTest do
     assert {:ok, nil} = Ash.get(Tweet, tweet.id, not_found_error?: false)
   end
 
-  test "loads the required author relationship", %{user: user} do
-    tweet = Ash.create!(Tweet, %{text: "owned", user_id: user.id}, action: :create)
+  test "relates the actor as the required author", %{user: user} do
+    tweet = Ash.create!(Tweet, %{text: "owned"}, action: :create, actor: user)
     tweet = Ash.load!(tweet, :user)
 
     assert tweet.user.id == user.id
+  end
+
+  test "liking is idempotent and unlike only removes the actor's like", %{user: user} do
+    other_user = seed_user()
+    tweet = Ash.create!(Tweet, %{text: "popular"}, action: :create, actor: user)
+
+    like = Ash.create!(Like, %{tweet_id: tweet.id}, action: :like, actor: user)
+    duplicate = Ash.create!(Like, %{tweet_id: tweet.id}, action: :like, actor: user)
+    Ash.create!(Like, %{tweet_id: tweet.id}, action: :like, actor: other_user)
+
+    assert duplicate.id == like.id
+    assert length(Ash.read!(Like)) == 2
+
+    Ash.bulk_destroy!(Like, :unlike, %{tweet_id: tweet.id}, actor: user)
+
+    assert [remaining] = Ash.read!(Like)
+    assert remaining.user_id == other_user.id
+  end
+
+  test "destroying a tweet cascades to its likes", %{user: user} do
+    tweet = Ash.create!(Tweet, %{text: "temporary"}, action: :create, actor: user)
+    Ash.create!(Like, %{tweet_id: tweet.id}, action: :like, actor: user)
+
+    Ash.destroy!(tweet)
+
+    assert Ash.read!(Like) == []
+  end
+
+  test "validates tweet length", %{user: user} do
+    assert {:error, error} =
+             Ash.create(Tweet, %{text: String.duplicate("x", 256)}, action: :create, actor: user)
+
+    assert Exception.message(error) =~ "no more than 255"
+  end
+
+  defp seed_user do
+    Ash.Seed.seed!(Twitter.Accounts.User, %{
+      email: "user-#{System.unique_integer([:positive])}@example.com",
+      hashed_password: "not-used-in-tests"
+    })
   end
 end
