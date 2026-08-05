@@ -84,6 +84,16 @@ defmodule Twitter.Tweets.TweetTest do
     refute not_liked.liked_by_me
   end
 
+  test "loads like count and author email aggregates", %{user: user} do
+    tweet = Ash.create!(Tweet, %{text: "aggregated"}, action: :create, actor: user)
+    Ash.create!(Like, %{tweet_id: tweet.id}, action: :like, actor: user)
+
+    tweet = Ash.load!(tweet, [:like_count, :user_email], actor: user)
+
+    assert tweet.like_count == 1
+    assert to_string(tweet.user_email) == to_string(user.email)
+  end
+
   defp seed_user do
     Ash.Seed.seed!(Twitter.Accounts.User, %{
       email: "user-#{System.unique_integer([:positive])}@example.com",
