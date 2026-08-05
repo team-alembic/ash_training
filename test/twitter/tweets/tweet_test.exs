@@ -71,6 +71,19 @@ defmodule Twitter.Tweets.TweetTest do
     assert Exception.message(error) =~ "no more than 255"
   end
 
+  test "loads expression calculations for the current actor", %{user: user} do
+    other_user = seed_user()
+    tweet = Ash.create!(Tweet, %{text: "calculated"}, action: :create, actor: user)
+    Ash.create!(Like, %{tweet_id: tweet.id}, action: :like, actor: user)
+
+    liked = Ash.load!(tweet, [:text_length, :liked_by_me], actor: user)
+    not_liked = Ash.load!(tweet, :liked_by_me, actor: other_user)
+
+    assert liked.text_length == 10
+    assert liked.liked_by_me
+    refute not_liked.liked_by_me
+  end
+
   defp seed_user do
     Ash.Seed.seed!(Twitter.Accounts.User, %{
       email: "user-#{System.unique_integer([:positive])}@example.com",
