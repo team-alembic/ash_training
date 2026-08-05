@@ -1,5 +1,9 @@
 defmodule Twitter.Tweets.Tweet do
-  use Ash.Resource, otp_app: :twitter, domain: Twitter.Tweets, data_layer: AshPostgres.DataLayer
+  use Ash.Resource,
+    otp_app: :twitter,
+    domain: Twitter.Tweets,
+    data_layer: AshPostgres.DataLayer,
+    authorizers: [Ash.Policy.Authorizer]
 
   attributes do
     uuid_primary_key :id
@@ -31,6 +35,21 @@ defmodule Twitter.Tweets.Tweet do
     end
   end
 
+  policies do
+    policy action_type(:read) do
+      authorize_if always()
+    end
+
+    policy action(:create) do
+      authorize_if always()
+    end
+
+    policy action([:update, :destroy]) do
+      error_message "only the author can edit or delete a tweet"
+      authorize_if expr(user_id == ^actor(:id))
+    end
+  end
+
   calculations do
     calculate :text_length, :integer, expr(string_length(text))
     calculate :liked_by_me, :boolean, expr(exists(likes, user_id == ^actor(:id)))
@@ -38,6 +57,7 @@ defmodule Twitter.Tweets.Tweet do
 
   aggregates do
     count :like_count, :likes
+
     first :user_email, :user, :email
 
     count :like_count_today, :likes do

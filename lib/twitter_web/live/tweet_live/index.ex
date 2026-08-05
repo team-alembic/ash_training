@@ -58,16 +58,20 @@ defmodule TwitterWeb.TweetLive.Index do
             <.link navigate={~p"/tweets/#{tweet}"}>Show</.link>
           </div>
 
-          <.link navigate={~p"/tweets/#{tweet}/edit"}>Edit</.link>
+          <%= if Ash.can?({tweet, :update}, @current_user) do %>
+            <.link navigate={~p"/tweets/#{tweet}/edit"}>Edit</.link>
+          <% end %>
         </:action>
 
         <:action :let={{id, tweet}}>
-          <.link
-            phx-click={JS.push("delete", value: %{id: tweet.id}) |> hide("##{id}")}
-            data-confirm="Are you sure?"
-          >
-            Delete
-          </.link>
+          <%= if Ash.can?({tweet, :destroy}, @current_user) do %>
+            <.link
+              phx-click={JS.push("delete", value: %{id: tweet.id}) |> hide("##{id}")}
+              data-confirm="Are you sure?"
+            >
+              Delete
+            </.link>
+          <% end %>
         </:action>
       </.table>
     </Layouts.app>

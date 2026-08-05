@@ -27,12 +27,19 @@ defmodule TwitterWeb.TweetLive.Form do
   end
 
   defp apply_action(socket, :edit, %{"id" => id}) do
-    socket
-    |> assign(:page_title, "Edit Tweet")
-    |> assign(
-      :tweet,
-      Ash.get!(Twitter.Tweets.Tweet, id, actor: socket.assigns.current_user)
-    )
+    tweet = Ash.get!(Twitter.Tweets.Tweet, id, actor: socket.assigns.current_user)
+
+    if Ash.can?({tweet, :update}, socket.assigns.current_user) do
+      socket
+      |> assign(:page_title, "Edit Tweet")
+      |> assign(:tweet, tweet)
+    else
+      socket
+      |> assign(:page_title, "Edit Tweet")
+      |> assign(:tweet, tweet)
+      |> put_flash(:error, "You are not allowed to edit this tweet.")
+      |> push_navigate(to: ~p"/tweets/#{tweet}")
+    end
   end
 
   defp apply_action(socket, :new, _params) do
