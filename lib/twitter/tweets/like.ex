@@ -33,6 +33,20 @@ defmodule Twitter.Tweets.Like do
 
       change filter(expr(tweet_id == ^arg(:tweet_id) and user_id == ^actor(:id)))
     end
+
+    action :liked?, :boolean do
+      argument :tweet_id, :uuid, allow_nil?: false
+
+      run fn input, context ->
+        require Ash.Query
+
+        Twitter.Tweets.Like
+        |> Ash.Query.filter(
+          tweet_id == ^input.arguments.tweet_id and user_id == ^context.actor.id
+        )
+        |> Ash.exists(Ash.Context.to_opts(context))
+      end
+    end
   end
 
   identities do
