@@ -2,6 +2,7 @@ defmodule TwitterWeb.Router do
   use TwitterWeb, :router
 
   use AshAuthentication.Phoenix.Router
+  import AshAuthentication.Plug.Helpers
 
   pipeline :browser do
     plug :accepts, ["html"]
@@ -16,6 +17,7 @@ defmodule TwitterWeb.Router do
   pipeline :api do
     plug :accepts, ["json"]
     plug :load_from_bearer
+    plug :set_actor, :user
   end
 
   pipeline :graphql do
