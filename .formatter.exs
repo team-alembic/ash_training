@@ -1,5 +1,7 @@
 [
   import_deps: [
+    :ash_lua,
+    :ash_ai,
     :ecto,
     :ecto_sql,
     :phoenix,

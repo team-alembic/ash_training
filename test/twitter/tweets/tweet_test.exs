@@ -144,6 +144,13 @@ defmodule Twitter.Tweets.TweetTest do
     assert updated.text == "edited"
   end
 
+  test "exposes the tweet feed as a tool" do
+    tools = AshAi.Info.tools(Twitter.Tweets)
+
+    assert %AshAi.Tool{resource: Tweet, action: :feed} =
+             Enum.find(tools, &(&1.name == :read_feed))
+  end
+
   defp seed_user do
     Ash.Seed.seed!(Twitter.Accounts.User, %{
       email: "user-#{System.unique_integer([:positive])}@example.com",

@@ -19,6 +19,10 @@ defmodule TwitterWeb.Router do
     plug :set_actor, :user
   end
 
+  pipeline :mcp do
+    plug AshAuthentication.Strategy.ApiKey.Plug, resource: Twitter.Accounts.User
+  end
+
   pipeline :graphql do
     plug AshGraphql.Plug
   end
@@ -51,6 +55,16 @@ defmodule TwitterWeb.Router do
     sign_out_route AuthController
     auth_routes AuthController, Twitter.Accounts.User
     reset_route []
+  end
+
+  scope "/api" do
+    pipe_through :mcp
+
+    scope "/mcp" do
+      forward "/", AshAi.Mcp.Router,
+        tools: [:read_feed, :ash_lua_docs, :ash_lua_eval],
+        otp_app: :twitter
+    end
   end
 
   scope "/api" do

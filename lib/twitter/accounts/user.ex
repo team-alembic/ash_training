@@ -5,6 +5,10 @@ defmodule Twitter.Accounts.User do
     authorizers: [Ash.Policy.Authorizer],
     domain: Twitter.Accounts
 
+  resource do
+    description "A user of the app. A user's email is only visible to that user."
+  end
+
   admin do
     actor? true
   end
@@ -18,6 +22,11 @@ defmodule Twitter.Accounts.User do
     strategies do
       password :password do
         identity_field :email
+      end
+
+      api_key :api_key do
+        api_key_relationship :valid_api_keys
+        api_key_hash_attribute :api_key_hash
       end
     end
 
@@ -66,9 +75,20 @@ defmodule Twitter.Accounts.User do
 
   actions do
     defaults [:read]
+
+    read :sign_in_with_api_key do
+      argument :api_key, :string, allow_nil?: false
+      prepare AshAuthentication.Strategy.ApiKey.SignInPreparation
+    end
   end
 
   identities do
     identity :unique_email, [:email]
+  end
+
+  relationships do
+    has_many :valid_api_keys, Twitter.Accounts.ApiKey do
+      filter expr(valid)
+    end
   end
 end

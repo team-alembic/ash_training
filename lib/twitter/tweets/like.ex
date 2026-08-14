@@ -1,5 +1,12 @@
 defmodule Twitter.Tweets.Like do
-  use Ash.Resource, otp_app: :twitter, domain: Twitter.Tweets, data_layer: AshPostgres.DataLayer
+  use Ash.Resource,
+    otp_app: :twitter,
+    domain: Twitter.Tweets,
+    data_layer: AshPostgres.DataLayer
+
+  resource do
+    description "A user's like of a tweet. A user can like each tweet once."
+  end
 
   attributes do
     uuid_primary_key :id
@@ -9,10 +16,12 @@ defmodule Twitter.Tweets.Like do
   relationships do
     belongs_to :tweet, Twitter.Tweets.Tweet do
       allow_nil? false
+      attribute_public? true
     end
 
     belongs_to :user, Twitter.Accounts.User do
       allow_nil? false
+      attribute_public? true
     end
   end
 
@@ -20,6 +29,7 @@ defmodule Twitter.Tweets.Like do
     defaults [:read]
 
     create :like do
+      description "Like a tweet as the current user. Liking it again changes nothing."
       accept [:tweet_id]
 
       change relate_actor(:user)
@@ -29,6 +39,7 @@ defmodule Twitter.Tweets.Like do
     end
 
     destroy :unlike do
+      description "Remove the current user's like from a tweet."
       argument :tweet_id, :uuid, allow_nil?: false
 
       change filter(expr(tweet_id == ^arg(:tweet_id) and user_id == ^actor(:id)))

@@ -1,6 +1,14 @@
 defmodule Twitter.Tweets do
   use Ash.Domain,
-    extensions: [AshGraphql.Domain, AshJsonApi.Domain, AshAdmin.Domain, AshPhoenix]
+    otp_app: :twitter,
+    extensions: [
+      AshGraphql.Domain,
+      AshJsonApi.Domain,
+      AshAdmin.Domain,
+      AshPhoenix,
+      AshAi,
+      AshLua.Domain
+    ]
 
   admin do
     show? true
@@ -8,6 +16,20 @@ defmodule Twitter.Tweets do
 
   json_api do
     prefix "/api/json"
+  end
+
+  lua do
+    namespace "tweets" do
+      action :feed, Twitter.Tweets.Tweet, :feed, labels: [:agent, :read_only]
+      action :list, Twitter.Tweets.Tweet, :read, labels: [:agent, :read_only]
+      action :create, Twitter.Tweets.Tweet, :create, labels: [:agent]
+    end
+
+    namespace "likes" do
+      action :list, Twitter.Tweets.Like, :read, labels: [:agent, :read_only]
+      action :like, Twitter.Tweets.Like, :like, labels: [:agent]
+      action :unlike, Twitter.Tweets.Like, :unlike, labels: [:agent]
+    end
   end
 
   resources do
@@ -31,5 +53,9 @@ defmodule Twitter.Tweets do
       define :unlike, args: [:tweet_id], require_reference?: false
       define :liked?, args: [:tweet_id]
     end
+  end
+
+  tools do
+    tool :read_feed, Twitter.Tweets.Tweet, :feed
   end
 end

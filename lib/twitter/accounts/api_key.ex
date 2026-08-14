@@ -1,0 +1,55 @@
+defmodule Twitter.Accounts.ApiKey do
+  use Ash.Resource,
+    otp_app: :twitter,
+    domain: Twitter.Accounts,
+    data_layer: AshPostgres.DataLayer,
+    authorizers: [Ash.Policy.Authorizer]
+
+  attributes do
+    uuid_primary_key :id
+
+    attribute :api_key_hash, :binary do
+      allow_nil? false
+      sensitive? true
+    end
+
+    attribute :expires_at, :utc_datetime_usec do
+      allow_nil? false
+    end
+  end
+
+  relationships do
+    belongs_to :user, Twitter.Accounts.User
+  end
+
+  actions do
+    defaults [:read, :destroy]
+
+    create :create do
+      primary? true
+      accept [:user_id, :expires_at]
+
+      change {AshAuthentication.Strategy.ApiKey.GenerateApiKey,
+              prefix: :twitter, hash: :api_key_hash}
+    end
+  end
+
+  postgres do
+    table "api_keys"
+    repo Twitter.Repo
+  end
+
+  identities do
+    identity :unique_api_key, [:api_key_hash]
+  end
+
+  calculations do
+    calculate :valid, :boolean, expr(expires_at > now())
+  end
+
+  policies do
+    bypass AshAuthentication.Checks.AshAuthenticationInteraction do
+      authorize_if always()
+    end
+  end
+end

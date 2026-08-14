@@ -6,6 +6,10 @@ defmodule Twitter.Tweets.Tweet do
     authorizers: [Ash.Policy.Authorizer],
     extensions: [AshGraphql.Resource, AshJsonApi.Resource]
 
+  resource do
+    description "A short post written by a user. Other users can like it."
+  end
+
   attributes do
     uuid_primary_key :id
 
@@ -20,6 +24,7 @@ defmodule Twitter.Tweets.Tweet do
     defaults [:read, :destroy]
 
     create :create do
+      description "Post a new tweet as the current user."
       accept [:text]
 
       change relate_actor(:user)
@@ -34,6 +39,7 @@ defmodule Twitter.Tweets.Tweet do
     end
 
     read :feed do
+      description "All tweets, newest first."
       prepare build(sort: [inserted_at: :desc])
     end
   end
