@@ -10,24 +10,14 @@
 
 ## Context
 
-In Lab 13, we implemented RAG using a `before_action` hook to fetch context and
-inject it into a prompt. This approach works well for simple workflows, but has
-limitations:
+In Lab 13, we implemented RAG inside one action preparation. That works for a
+small workflow, but it hides retrieval and prompt stages inside one callback.
 
-- **Sequential Execution** - Each step waits for the previous one
-- **Limited Error Handling** - No automatic rollback or compensation
-- **No Concurrency** - Can't parallelize independent operations
-- **Difficult Testing** - Hard to test individual steps in isolation
-
-**Reactor** is Elixir's solution for orchestrating complex workflows with:
-
-- **Concurrent Execution** - Run independent steps in parallel
-- **Automatic Rollbacks** - Saga pattern with compensating actions
-- **Error Recovery** - Retry logic and graceful degradation
-- **Composability** - Reactors can call other reactors
-
-In this lab, we'll rebuild our RAG implementation using Reactor to gain these
-benefits and demonstrate more sophisticated workflow orchestration.
+Reactor makes the dataflow explicit and composable. It can also run independent
+steps concurrently and support retries or compensation when those behaviors are
+configured. This lab builds a sequential dependency graph and does not add undo,
+compensation, or custom retry behavior; its focus is clear orchestration through
+Ash actions.
 
 ## Steps
 
@@ -38,10 +28,14 @@ have the Ash.Reactor extension available. In `mix.exs`, verify you have:
 
 ```elixir
 {:ash, "~> 3.0"}
-{:reactor, "~> 0.9"}  # Usually included via ash
 ```
 
-Run `mix deps.get` if needed.
+Reactor is included as a dependency of Ash — you can confirm with
+`mix deps | grep reactor`. No changes should be needed.
+
+The LLM calls in this lab go through the same ReqLLM setup you configured in
+Lab 12 (provider API keys under `config :req_llm` in `config/runtime.exs`), so
+no additional AI dependencies are needed here.
 
 ### 2. Create Prompt Actions for RAG Pipeline
 
@@ -60,8 +54,7 @@ action :reformulate_query, :string do
     description "The original user question"
   end
 
-  run prompt(
-    LangChain.ChatModels.ChatOpenAI.new!(%{model: "gpt-4o-mini"}),
+  run prompt("openai:gpt-4o-mini",
     prompt: """
     You are an expert at reformulating questions into effective search queries.
 
@@ -93,8 +86,7 @@ action :answer_with_context, :string do
     description "Pre-built context from semantic search"
   end
 
-  run prompt(
-    LangChain.ChatModels.ChatOpenAI.new!(%{model: "gpt-4o-mini"}),
+  run prompt("openai:gpt-4o-mini",
     prompt: """
     You are a helpful assistant answering questions about tweets.
 
@@ -110,6 +102,10 @@ action :answer_with_context, :string do
 end
 ```
 
+As in Lab 13, the first argument to `prompt/2` is a ReqLLM model spec string in
+`"provider:model-name"` format. Swapping providers is a one-string change —
+e.g. `"anthropic:claude-sonnet-4-5"` — with no other code changes.
+
 Update the policy to allow both actions:
 
 ```elixir
@@ -121,7 +117,8 @@ end
 ### 3. Create a Reactor Module for RAG
 
 Now create a Reactor that orchestrates the workflow by calling Ash actions.
-Create `lib/twitter/ai/rag_reactor.ex`:
+Create `lib/twitter/ai/rag_reactor.ex` (the `lib/twitter/ai/` directory
+doesn't exist yet — create it first):
 
 ```elixir
 defmodule Twitter.Ai.RagReactor do
@@ -151,7 +148,8 @@ defmodule Twitter.Ai.RagReactor do
   # Step 2: Fetch relevant tweets using the reformulated query
   read :fetch_context_tweets, Twitter.Tweets.Tweet, :semantic_search do
     inputs %{
-      query: result(:reformulate_query)  # Use the reformulated query!
+      query: result(:reformulate_query), # Use the reformulated query!
+      limit: input(:limit)
     }
   end
 
@@ -210,7 +208,55 @@ Key improvements:
 - Uses `read` step for semantic search
 - No manual API calls - everything goes through Ash actions
 - Shows how one LLM's output (`reformulate_query`) feeds into retrieval step
+- Passes the caller's result limit into semantic search
 - Response includes the reformulated query for transparency
+
+**Bonus: retries with backoff (the saga pattern in action)**
+
+The Context section mentioned that Reactor supports retries and compensating
+actions when configured — here is what that looks like. Generic `step`s carry
+Reactor's compensation machinery: a `compensate` callback (return `:retry` to
+run the step again), `max_retries` to bound the attempts, and `backoff` to
+space them out. LLM APIs are exactly the kind of flaky dependency (rate
+limits, timeouts) this exists for. Try swapping the `:generate_answer` action
+step for a generic step that calls the same prompt action, but retries on
+failure:
+
+```elixir
+# A retry-capable drop-in for the :generate_answer step
+step :generate_answer do
+  argument :question, input(:question)
+  argument :context, result(:build_context)
+
+  max_retries 2
+
+  run fn args, _context ->
+    Twitter.Tweets.Tweet
+    |> Ash.ActionInput.for_action(:answer_with_context, %{
+      question: args.question,
+      context: args.context
+    })
+    |> Ash.run_action()
+  end
+
+  # Returning :retry tells Reactor to run the step again
+  compensate fn _error, _args, _context ->
+    :retry
+  end
+
+  # Exponential backoff between attempts: 1s, 2s, 4s...
+  backoff fn _error, _args, context ->
+    round(:math.pow(2, Map.get(context, :current_try, 0)) * 1000)
+  end
+end
+```
+
+The rollback half of the saga applies to steps that write data: Ash.Reactor's
+`create`, `update`, `destroy`, and `action` steps accept `undo` and
+`undo_action` options, and Reactor calls the compensating action automatically
+when a later step fails. Our RAG workflow is read-only, so there is nothing to
+roll back here — but the same reactor could seed tweets with a `create` step
+and have them undone if answer generation blew up.
 
 ### 4. Add a Reactor-Based Action to Tweet
 
@@ -222,7 +268,10 @@ Add to `lib/twitter/tweets/tweet.ex`:
 ```elixir
 action :ask_with_reactor, :map do
   argument :question, :string, allow_nil?: false
-  argument :limit, :integer, default: 5
+  argument :limit, :integer,
+    allow_nil?: false,
+    default: 5,
+    constraints: [min: 1, max: 100]
 
   # Pass the Reactor module directly - Ash handles execution automatically
   run Twitter.Ai.RagReactor
@@ -250,21 +299,20 @@ To make the action easier to call, add it to the code interface in
 `lib/twitter/tweets.ex`:
 
 ```elixir
-resources do
-  resource Twitter.Tweets.Tweet do
-    define :feed
-    define :get_tweet, action: :read, get_by: [:id]
-    define :delete_tweet, action: :destroy
-    define :ask_tweet_question, action: :ask, args: [:question]
-    define :ask_tweet_reactor_question, action: :ask_with_reactor, args: [:question]  # Add this line
-  end
-
-  # ... rest of resources
+resource Twitter.Tweets.Tweet do
+  # ... keep the existing defines as they are ...
+  define :ask_tweet_reactor_question, action: :ask_with_reactor, args: [:question]
 end
 ```
 
+Only the last line is new — leave the existing `define`s (including their
+`default_options`) untouched.
+
 Now you can call the action directly:
-`Twitter.Tweets.ask_tweet_reactor_question("What are people saying about Elixir?")`
+`Twitter.Tweets.ask_tweet_reactor_question!("What are people saying about Elixir?")`
+
+(As with all code interfaces, the non-bang variant returns `{:ok, result}`;
+the `!` variant returns the result map directly.)
 
 ### 6. Test the Reactor-Based RAG
 
@@ -307,3 +355,20 @@ reformulated the question for better semantic search results.
 
 - Implement a "critique and refine" pattern where one LLM critiques another's
   response
+- Swap the LLM provider by changing the model spec string in one of the prompt
+  actions — no other code changes needed
+- Add retry-with-backoff (from the bonus in Step 3) to the `:reformulate_query`
+  step as well
+- Give the answer action a custom tool via `extra_tools:` and
+  `ReqLLM.Tool.new!/1` (see the prompt-backed actions docs). Two gotchas: the
+  tool is built while the resource's DSL is compiled, so an inline anonymous
+  `callback:` fails to compile (functions cannot be escaped into the module),
+  and an MFA tuple like `{MyModule, :my_fun}` fails `ReqLLM.Tool.new!/1`'s
+  `function_exported?` check because the module isn't compiled yet at DSL
+  evaluation time. What works: define the callback in a separate module and
+  pass a remote capture — `&MyModule.my_fun/1`
+- Add a `guard` or `where` clause so `:generate_answer` is skipped when
+  `:fetch_context_tweets` returns no tweets
+- Build a seeding reactor that uses Ash.Reactor's `bulk_create` step with an
+  `undo_action`, then force a later step to fail and watch the saga roll the
+  seeded records back

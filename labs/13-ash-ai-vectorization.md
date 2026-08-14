@@ -1,25 +1,12 @@
 # Lab 13 - Vectorization & RAG with Actions
 
-> **Note**: This lab has been updated to reflect the correct setup process based
-> on official documentation and testing. Key changes:
->
-> - Added required Postgrex.Types.define setup (Steps 1-3)
-> - Clarified that Ash auto-generates the vector extension migration (no manual
->   migration needed)
-> - **Changed to `:ash_oban` strategy** instead of `:after_action` for
->   production-ready async processing
-> - Embedding model uses `AshAi.EmbeddingModel` behavior with `generate/2`
->   callback
-> - Extension is `AshAi` (not `AshAi.Resource`)
-> - Policy check uses `AshOban.Checks.AshObanInteraction`
-> - Includes Oban trigger configuration with proper module names
-
 ## Relevant Documentation
 
-- [AshAi Vectorization Guide](https://hexdocs.pm/ash_ai/vectorization.html)
+- [AshAi Vectorization](https://hexdocs.pm/ash_ai/readme.html#vectorization)
 - [PostgreSQL pgvector Extension](https://github.com/pgvector/pgvector)
 - [AshPostgres Vector Support](https://hexdocs.pm/ash_postgres/AshPostgres.Extensions.Vector.html)
-- [Prompt-backed Actions](https://hexdocs.pm/ash_ai/prompt-backed-actions.html)
+- [Prompt-backed Actions](https://hexdocs.pm/ash_ai/AshAi.Actions.Prompt.html)
+- [LangChain to ReqLLM Migration](https://hexdocs.pm/ash_ai/langchain-to-reqllm-migration.html)
 - [Action Hooks](https://hexdocs.pm/ash/actions.html#module-action-hooks)
 
 ## Context
@@ -80,84 +67,39 @@ migration for the vector extension. Ash will auto-generate the
 `CREATE EXTENSION IF NOT EXISTS vector` migration when you run `mix ash.codegen`
 in a later step!
 
-### 4. Create an Embedding Model Module
+### 4. Configure the Embedding Model
 
-We need to configure how text gets converted to embeddings. Create a new file
-`lib/twitter/ai/openai_embedding_model.ex`:
+We need to configure how text gets converted to embeddings. AshAi ships with a
+built-in embedding model, `AshAi.EmbeddingModels.ReqLLM`, which uses the ReqLLM
+library under the hood to talk to any supported provider (OpenAI, Google,
+Cohere, Voyage, ...). You point it at a provider with a model spec string like
+`"openai:text-embedding-3-small"` — no HTTP client code required.
 
-**CRITICAL**: The embedding model must implement the `AshAi.EmbeddingModel`
-behavior with `dimensions/1` and `generate/2` callbacks.
-
-```elixir
-defmodule Twitter.Ai.OpenAiEmbeddingModel do
-  @moduledoc """
-  OpenAI embedding model for vectorizing text.
-  Uses the text-embedding-3-small model (1536 dimensions).
-  """
-  use AshAi.EmbeddingModel
-
-  @impl true
-  def dimensions(_opts), do: 1536
-
-  @impl true
-  def generate(texts, _opts) do
-    api_key = Application.get_env(:langchain, :openai_key)
-
-    if is_nil(api_key) do
-      raise "OPENAI_API_KEY not configured"
-    end
-
-    # Support both static keys and function-based keys
-    api_key =
-      if is_function(api_key, 0) do
-        api_key.()
-      else
-        api_key
-      end
-
-    headers = [
-      {"Authorization", "Bearer #{api_key}"},
-      {"Content-Type", "application/json"}
-    ]
-
-    body = %{
-      "input" => texts,
-      "model" => "text-embedding-3-small"
-    }
-
-    case Req.post("https://api.openai.com/v1/embeddings",
-           json: body,
-           headers: headers
-         ) do
-      {:ok, %{status: 200, body: response_body}} ->
-        embeddings =
-          response_body["data"]
-          |> Enum.sort_by(& &1["index"])
-          |> Enum.map(& &1["embedding"])
-
-        {:ok, embeddings}
-
-      {:ok, response} ->
-        {:error, "OpenAI API error: #{inspect(response)}"}
-
-      {:error, error} ->
-        {:error, "Request failed: #{inspect(error)}"}
-    end
-  end
-end
-```
-
-Add `req` to your dependencies in `mix.exs`:
+The only setup needed is telling ReqLLM about your API key — we already did
+this in Lab 12, in `config/runtime.exs`:
 
 ```elixir
-{:req, "~> 0.4"}
+config :req_llm, openai_api_key: openai_api_key
 ```
 
-Then run:
+Make sure `OPENAI_API_KEY` is set in your shell environment before starting the
+app.
 
-```bash
-mix deps.get
+We'll wire the embedding model into the Tweet resource in the next step, as a
+tuple of module and options:
+
+```elixir
+{AshAi.EmbeddingModels.ReqLLM,
+ model: "openai:text-embedding-3-small",
+ dimensions: 1536}
 ```
+
+> **Aside — bring your own provider**: Under the hood, an embedding model is
+> any module implementing the `AshAi.EmbeddingModel` behavior, which has just
+> two callbacks: `dimensions/1` (the vector size) and `generate/2` (texts in,
+> `{:ok, vectors}` out). If you ever need a provider ReqLLM doesn't support —
+> or a local model — you can write your own module with
+> `use AshAi.EmbeddingModel` and pass it in place of the built-in one.
 
 ### 5. Add Vectorization to Tweet Resource
 
@@ -200,11 +142,9 @@ defmodule Twitter.Tweets.Tweet do
       used_attributes [:text]
     end
 
-    # Store embeddings in this attribute (maps :text to :full_text_vector)
-    attributes text: :full_text_vector
-
-    # Use our OpenAI embedding model
-    embedding_model Twitter.Ai.OpenAiEmbeddingModel
+    # Use the builtin ReqLLM-backed OpenAI embedding model
+    embedding_model {AshAi.EmbeddingModels.ReqLLM,
+                     model: "openai:text-embedding-3-small", dimensions: 1536}
 
     # Use ash_oban strategy for async updates
     strategy :ash_oban
@@ -216,6 +156,8 @@ defmodule Twitter.Tweets.Tweet do
       trigger :ash_ai_update_embeddings do
         action :ash_ai_update_embeddings
         queue :tweet_vectorizer
+        # The trigger runs when vectorizable fields change; it is not a cron job.
+        scheduler_cron false
         worker_read_action :read
         worker_module_name Twitter.Tweets.Tweet.AshOban.Worker.AshAiUpdateEmbeddings
         scheduler_module_name Twitter.Tweets.Tweet.AshOban.Scheduler.AshAiUpdateEmbeddings
@@ -282,22 +224,35 @@ after creating the tweet.
 
 ```elixir
 # Get or create a user first
-user = Twitter.Accounts.User |> Ash.Query.first!() |> Ash.read_one!()
+user = Ash.read_first!(Twitter.Accounts.User)
 
 # Create a tweet
 tweet = Twitter.Tweets.Tweet
-|> Ash.Changeset.for_create(:create, %{text: "Elixir is an amazing functional programming language"})
-|> Ash.create!(actor: user)
+|> Ash.Changeset.for_create(:create, %{text: "Elixir is an amazing functional programming language"}, actor: user)
+|> Ash.create!()
 
 # The vector won't be there immediately - it's being processed in the background
-tweet.full_text_vector  # Will be nil at first
+tweet.full_text_vector  # Will be %Ash.NotLoaded{} (nil in the database) at first
 
 # Wait a moment for the Oban job to process, then reload
 
-# Reload the tweet to see the vector
-tweet = Twitter.Tweets.Tweet |> Ash.get!(tweet.id)
+# Reload the tweet to see the vector.
+# Note: vector attributes are NOT selected by default (they're large!),
+# so we have to select the vector explicitly.
+require Ash.Query
+
+tweet =
+  Twitter.Tweets.Tweet
+  |> Ash.Query.select([:full_text_vector])
+  |> Ash.Query.filter(id == ^tweet.id)
+  |> Ash.read_one!()
+
 tweet.full_text_vector  # Now you'll see a long array of floats (1536 dimensions)
 ```
+
+**Note**: In the test environment Oban is configured with `testing: :manual`,
+so vectorization jobs are never run automatically. In tests, drain the queue
+explicitly with `Oban.drain_queue(queue: :tweet_vectorizer)`.
 
 ### 8. Create a Semantic Search Action
 
@@ -310,19 +265,29 @@ actions do
 
   read :semantic_search do
     argument :query, :string, allow_nil?: false
+    argument :limit, :integer,
+      allow_nil?: false,
+      default: 10,
+      constraints: [min: 1, max: 100]
 
     prepare fn query, _context ->
       search_text = Ash.Query.get_argument(query, :query)
+      limit = Ash.Query.get_argument(query, :limit)
 
-      # Get embedding for the search query using generate/2 (not embed/1)
-      case Twitter.Ai.OpenAiEmbeddingModel.generate([search_text], []) do
+      # Generate an embedding for the search query. When calling the
+      # embedding model directly, we pass the same options we gave it
+      # in the vectorize block.
+      case AshAi.EmbeddingModels.ReqLLM.generate([search_text],
+             model: "openai:text-embedding-3-small",
+             dimensions: 1536
+           ) do
         {:ok, [search_vector]} ->
           query
           |> Ash.Query.sort(
             {calc(vector_cosine_distance(full_text_vector, ^search_vector), type: :float),
              :asc}
           )
-          |> Ash.Query.limit(10)
+          |> Ash.Query.limit(limit)
 
         {:error, error} ->
           Ash.Query.add_error(query, error)
@@ -332,7 +297,9 @@ actions do
 end
 ```
 
-Add the vector distance function support to the postgres config:
+Add a vector index for faster similarity searches to the postgres config. Note
+that we have to spell out the operator class (`vector_cosine_ops`) as part of
+the field, since `hnsw` has no default operator class:
 
 ```elixir
 postgres do
@@ -340,14 +307,16 @@ postgres do
   table "tweets"
 
   custom_indexes do
-    # Add a vector index for faster similarity searches
-    index [:full_text_vector],
+    index ["full_text_vector vector_cosine_ops"],
+      name: "tweets_full_text_vector_index",
       using: "hnsw",
-      with: "m = 16, ef_construction = 64",
-      concurrently: false
+      concurrently: true
   end
 end
 ```
+
+(`hnsw` indexes also accept tuning parameters via the `with:` option, e.g.
+`with: "m = 16, ef_construction = 64"` — the defaults are fine for this lab.)
 
 Generate and run migrations:
 
@@ -356,7 +325,27 @@ mix ash.codegen add_vector_index
 mix ash.migrate
 ```
 
+Finally, expose the new action as a tool so the AI can search semantically. In
+`lib/twitter/tweets.ex`, add it to the existing `tools` block:
+
+```elixir
+tool :semantic_search_tweets, Twitter.Tweets.Tweet, :semantic_search do
+  description "Perform a semantic search over tweets based on a query string"
+end
+```
+
+As in Lab 12, add `:semantic_search_tweets` to the expected tools list in
+`test/twitter/tweets/tweet_test.exs`. (We leave the chat agent's explicit
+`tools:` list in `respond.ex` alone for now — wiring RAG into the chat is one
+of the "Try on your own" exercises. This is also a good moment to revisit the
+`eval_actions` block from Lab 11 if you want Lua scripts to search
+semantically too.)
+
 ### 9. Test Semantic Search
+
+Before searching, seed a handful of tweets on different topics (3-5 is plenty
+— say cooking, sports, and programming) so there's something for the ranking
+to be observable against.
 
 In IEx, try searching:
 
@@ -394,16 +383,15 @@ action :ask, :string do
     allow_nil? true
   end
 
-  prepare fn input, _context ->
+  prepare fn input, context ->
     question = input.arguments.question
     limit = input.arguments.limit
 
     # Retrieve relevant tweets using semantic search
     context_tweets =
       Twitter.Tweets.Tweet
-      |> Ash.Query.for_read(:semantic_search, %{query: question})
-      |> Ash.Query.limit(limit)
-      |> Ash.read!()
+      |> Ash.Query.for_read(:semantic_search, %{query: question, limit: limit})
+      |> Ash.read!(scope: context)
       |> Enum.map(fn tweet ->
         "- \"#{tweet.text}\""
       end)
@@ -412,7 +400,7 @@ action :ask, :string do
   end
 
   run prompt(
-        LangChain.ChatModels.ChatOpenAI.new!(%{model: "gpt-4o-mini"}),
+        "openai:gpt-4o-mini",
         prompt: """
         You are a helpful assistant answering questions about tweets.
 
@@ -425,11 +413,17 @@ action :ask, :string do
         Please provide a helpful, concise answer based on the tweets above.
         If the tweets don't contain relevant information, acknowledge that
         and provide a general response.
-        """,
-        verbose?: true
+        """
       )
 end
 ```
+
+Note that the first argument to `prompt/2` is a ReqLLM model spec string —
+`"provider:model-name"`. Swapping to another provider (say,
+`"anthropic:claude-sonnet-4-5"`) is just a matter of changing the string and
+configuring that provider's API key. The prompt itself is an EEx template with
+access to `@input`, so arguments set in the `prepare` hook (like our retrieved
+`:context`) flow straight into it.
 
 Don't forget to add the `:ask` action to the policy block:
 
@@ -495,7 +489,9 @@ Twitter.Tweets.ask("What are people tweeting about Elixir?")
 - Add vectorization to user bios and search users by semantic similarity
 
 - Implement multiple vectorization strategies (`:after_action` vs `:ash_oban`)
-  and compare performance
+  and compare performance (hint: with `:after_action` the embedding update is
+  no longer run by AshOban, so the policy bypass needs a different check:
+  `bypass action(:ash_ai_update_embeddings) do authorize_if AshAi.Checks.ActorIsAshAi end`)
 
 - Create a `regenerate_embeddings` action to re-vectorize all existing tweets
 
@@ -505,8 +501,10 @@ Twitter.Tweets.ask("What are people tweeting about Elixir?")
 - Combine vector search with traditional filters (e.g., semantic search within
   tweets from the last week)
 
-- Experiment with different embedding models (e.g., `text-embedding-3-large` for
-  higher quality)
+- Experiment with different embedding models — with the built-in ReqLLM model
+  this is just a different model string (e.g.,
+  `"openai:text-embedding-3-large"` for higher quality, or even another
+  provider entirely — just remember to update `dimensions` to match)
 
 - Add a `relevance_score` to show how similar each context tweet is to the query
 

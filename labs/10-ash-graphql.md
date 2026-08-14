@@ -10,15 +10,18 @@
 
 ## Steps
 
-1. Uncomment the contents of `TwitterWeb.GraphqlSchema` in `lib/twitter_web/graphql_schema.ex`.
-
-2. Add `AshGraphql.Resource` to the extensions
+1. Add `AshGraphql.Resource` to the extensions
 
 ```bash
-mix ash.extend Twitter.Tweets.Tweet graphql
+mix ash.extend Twitter.Tweets.Tweet graphql --yes
 ```
 
-3. Add a `query` to get the `:feed`
+**Note:** Because our real schema is still commented out, this also generates an
+extra schema in `lib/twitter/graphql_schema.ex` (`Twitter.GraphqlSchema`) that
+does not compile. Delete that file — the router already points at
+`TwitterWeb.GraphqlSchema`, which we'll uncomment in step 3.
+
+2. Add a `query` to get the `:feed`
 
 ```elixir
 graphql do
@@ -30,8 +33,15 @@ graphql do
 end
 ```
 
+3. Uncomment the contents of `TwitterWeb.GraphqlSchema` in `lib/twitter_web/graphql_schema.ex`.
+
+Do this step last — until at least one query is defined, the schema fails to
+compile with `The object type "query" must define one or more fields.`
+
 Go to `localhost:4000/api/gql/playground`, and try the following query.
-Make sure that all fields referenced below have been made `public? true`.
+Make sure that all fields referenced below are `public? true` — add `public? true`
+inside the `first :user_email, :user, :email do ... end` aggregate block (the
+other fields already are).
 
 ```graphql
 query {
@@ -59,15 +69,63 @@ query {
 }
 ```
 
+By default every public field is filterable with every operator. You can
+constrain the public filter surface with `filterable_fields`, optionally
+restricting which operators each field allows:
+
+```elixir
+graphql do
+  type :tweet
+  filterable_fields [:text, like_count: [:eq, :greater_than]]
+end
+```
+
+Browse the schema again and see how the filter input type shrinks.
+
 ## Try on your own
 
 - Try out filtering/sorting in the GraphQL Playground
 
 - Expose additional fields on the `:tweet` type
 
-- Expose the `like` action over the GraphQL API, using the `mutations` configuration
+- Expose the `like` action over the GraphQL API, using the `mutations`
+  configuration. `:like` is a create action on `Twitter.Tweets.Like`, so add
+  `AshGraphql.Resource` to that resource's extensions and give it a
+  `graphql` block:
+
+```elixir
+graphql do
+  type :like
+
+  mutations do
+    create :like_tweet, :like
+  end
+end
+```
 
 - Expose the `unlike` action as well. (hint: you'll need to use `identity false` on the mutation)
+
+```elixir
+destroy :unlike_tweet, :unlike do
+  identity false
+end
+```
+
+**Note:** These actions use `relate_actor`, so calling them without an actor
+fails with an unhelpful error — authenticate the request (e.g. a bearer token)
+so an actor is set.
+
+- By default a mutation payload puts the record under a `result` field. Add
+  `result_name :like` to your `like_tweet` mutation and see how the payload
+  type changes in the playground:
+
+```elixir
+mutations do
+  create :like_tweet, :like do
+    result_name :like
+  end
+end
+```
 
 You may have done the following already.
 
