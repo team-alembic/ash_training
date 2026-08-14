@@ -3,7 +3,7 @@ defmodule TwitterWeb.Router do
 
   import Oban.Web.Router
   use AshAuthentication.Phoenix.Router
-  import AshAuthentication.Plug.Helpers
+  use AshAuthentication.Phoenix.Oauth2Server.Router
 
   pipeline :browser do
     plug :accepts, ["html"]
@@ -13,6 +13,7 @@ defmodule TwitterWeb.Router do
     plug :protect_from_forgery
     plug :put_secure_browser_headers
     plug :load_from_session
+    plug :set_actor, :user
   end
 
   pipeline :api do
@@ -23,6 +24,12 @@ defmodule TwitterWeb.Router do
 
   pipeline :graphql do
     plug AshGraphql.Plug
+  end
+
+  pipeline :mcp do
+    plug AshAuthentication.Phoenix.Oauth2Server.BearerPlug,
+      oauth2_server: Twitter.Oauth2Server,
+      required?: true
   end
 
   if Mix.env() == :dev do
@@ -56,7 +63,21 @@ defmodule TwitterWeb.Router do
     reset_route []
   end
 
+  # Consent screen — browser pipeline (session + CSRF + actor)
+  scope "/" do
+    pipe_through :browser
+    oauth2_server_consent_routes(oauth2_server: Twitter.Oauth2Server)
+  end
+
+  # Protocol endpoints — no CSRF, at the site root so /.well-known/* is
+  # where clients expect it
+  scope "/" do
+    oauth2_server_protocol_routes(oauth2_server: Twitter.Oauth2Server)
+  end
+
   scope "/api" do
+    pipe_through :mcp
+
     scope "/mcp" do
       forward "/", AshAi.Mcp.Router,
         tools: [:read_feed, :ash_lua_docs, :ash_lua_eval],

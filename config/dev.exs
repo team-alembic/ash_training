@@ -36,7 +36,11 @@ config :twitter, TwitterWeb.Endpoint,
     tailwind: {Tailwind, :install_and_run, [:twitter, ~w(--watch)]}
   ]
 
-config :twitter, token_signing_secret: secret_key_base
+config :twitter,
+  token_signing_secret: secret_key_base,
+  oauth2_issuer_url: "http://localhost:4000",
+  oauth2_resource_url: "http://localhost:4000",
+  oauth2_signing_secret: "EA5iGLa9CRM07KnP9o4jJYQAuGlU2C3w9ZcxDZj/ylI"
 
 # ## SSL Support
 #

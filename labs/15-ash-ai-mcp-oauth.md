@@ -79,6 +79,18 @@ Have a look at what it scaffolded:
   identifies itself with an HTTPS URL pointing at its own metadata; that's
   the registration mechanism the current MCP spec recommends, with DCR kept
   for compatibility.
+- Because `cimd_enabled?: true` is set, `OauthClient` must also carry the
+  `AshAuthentication.Oauth2Server.ClientResource` extension (no migration
+  needed). Without it a client row is stored for every distinct URL
+  `client_id` ever resolved at `/authorize` and nothing prunes them — an
+  unbounded-growth denial-of-service vector, so the compiler rejects the
+  combination:
+
+  ```elixir
+  use Ash.Resource,
+    extensions: [AshAuthentication.Oauth2Server.ClientResource],
+    ...
+  ```
 - Three new `secret_for/4` clauses in `Twitter.Accounts.Secrets` for
   `:issuer_url`, `:resource_url` and `:signing_secret`, with localhost
   defaults written to `config/dev.exs`. That config lands **only** in
