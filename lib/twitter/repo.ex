@@ -6,6 +6,7 @@ defmodule Twitter.Repo do
   end
 
   def min_pg_version do
-    %Version{major: 16, minor: 0, patch: 0}
+    # PG 17+ enables MERGE-based upserts in ash_postgres >= 2.10
+    %Version{major: 17, minor: 0, patch: 0}
   end
 end
