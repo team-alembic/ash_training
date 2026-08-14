@@ -1,5 +1,9 @@
 defmodule Twitter.Tweets.Like do
-  use Ash.Resource, otp_app: :twitter, domain: Twitter.Tweets, data_layer: AshPostgres.DataLayer
+  use Ash.Resource,
+    otp_app: :twitter,
+    domain: Twitter.Tweets,
+    data_layer: AshPostgres.DataLayer,
+    extensions: [AshLua.Resource]
 
   attributes do
     uuid_primary_key :id

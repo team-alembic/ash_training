@@ -54,6 +54,16 @@ defmodule TwitterWeb.Router do
   end
 
   scope "/api" do
+    scope "/mcp" do
+      forward "/", AshAi.Mcp.Router,
+        tools: [:read_feed, :ash_lua_docs, :ash_lua_eval],
+        # For many tools, you will need to set the `protocol_version_statement` to the older version.
+        protocol_version_statement: "2024-11-05",
+        otp_app: :twitter
+    end
+  end
+
+  scope "/api" do
     pipe_through :api
 
     scope "/json" do

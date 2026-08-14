@@ -1,6 +1,14 @@
 defmodule Twitter.Tweets do
   use Ash.Domain,
-    extensions: [AshGraphql.Domain, AshJsonApi.Domain, AshAdmin.Domain, AshPhoenix]
+    otp_app: :twitter,
+    extensions: [
+      AshGraphql.Domain,
+      AshJsonApi.Domain,
+      AshAdmin.Domain,
+      AshPhoenix,
+      AshAi,
+      AshLua.Domain
+    ]
 
   admin do
     show? true
@@ -30,6 +38,12 @@ defmodule Twitter.Tweets do
       define :like, args: [:tweet_id]
       define :unlike, args: [:tweet_id], require_reference?: false
       define :liked?, args: [:tweet_id]
+    end
+  end
+
+  tools do
+    tool :read_feed, Twitter.Tweets.Tweet, :feed do
+      description "Retrieve the feed of tweets, sorted by most recent first"
     end
   end
 end

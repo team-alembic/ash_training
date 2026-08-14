@@ -1,7 +1,7 @@
 defmodule Twitter.Accounts.User do
   use Ash.Resource,
     data_layer: AshPostgres.DataLayer,
-    extensions: [AshAuthentication, AshAdmin.Resource],
+    extensions: [AshAuthentication, AshAdmin.Resource, AshLua.Resource],
     authorizers: [Ash.Policy.Authorizer],
     domain: Twitter.Accounts
 

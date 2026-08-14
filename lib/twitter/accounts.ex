@@ -1,6 +1,7 @@
 defmodule Twitter.Accounts do
   use Ash.Domain,
-    extensions: [AshAdmin.Domain]
+    otp_app: :twitter,
+    extensions: [AshAdmin.Domain, AshLua.Domain]
 
   admin do
     show? true
