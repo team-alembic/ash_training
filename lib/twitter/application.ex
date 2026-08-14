@@ -10,6 +10,7 @@ defmodule Twitter.Application do
     Ecto.DevLogger.install(Twitter.Repo)
 
     children = [
+      {AshAuthentication.Oauth2Server.Supervisor, [otp_app: :twitter]},
       TwitterWeb.Telemetry,
       Twitter.Repo,
       {DNSCluster, query: Application.get_env(:twitter, :dns_cluster_query) || :ignore},

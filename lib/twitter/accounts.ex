@@ -17,5 +17,9 @@ defmodule Twitter.Accounts do
     resource Twitter.Accounts.User
     resource Twitter.Accounts.Token
     resource Twitter.Accounts.ApiKey
+    resource Twitter.Accounts.OauthClient
+    resource Twitter.Accounts.OauthAuthorizationCode
+    resource Twitter.Accounts.OauthRefreshToken
+    resource Twitter.Accounts.OauthConsent
   end
 end

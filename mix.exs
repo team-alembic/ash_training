@@ -35,6 +35,7 @@ defmodule Twitter.MixProject do
   # Type `mix help deps` for examples and options.
   defp deps do
     [
+      {:req, "~> 0.5"},
       {:ash_lua, "~> 0.2"},
       {:req_llm, "~> 1.18"},
       {:oban, "~> 2.0"},
@@ -47,6 +48,7 @@ defmodule Twitter.MixProject do
       {:ash, "~> 3.0"},
       {:ash_admin, "~> 1.0"},
       {:ash_authentication, "~> 5.0.0-rc.12"},
+      {:ash_authentication_oauth2_server, "~> 0.3.0"},
       {:ash_authentication_phoenix, "~> 3.0.0-rc"},
       {:ash_graphql, "~> 1.0"},
       {:ash_json_api, "~> 1.0"},
