@@ -12,6 +12,8 @@ config :twitter,
   ash_domains: [Twitter.Accounts, Twitter.Tweets],
   generators: [timestamp_type: :utc_datetime]
 
+config :ash, default_string_length_count: :codepoints
+
 # Configures the endpoint
 config :twitter, TwitterWeb.Endpoint,
   url: [host: "localhost"],

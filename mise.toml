@@ -1,0 +1,31 @@
+# Tool versions are pinned in `.tool-versions`, which mise and asdf both read,
+# so there is only ever one set of versions to keep in sync.
+#
+# Participants: `mise install` gets you the right Erlang/Elixir, then
+# `mise run setup`. Run `mise tasks` to see everything available here.
+
+[tasks.setup]
+description = "Install deps, create + migrate the database, build assets"
+run = "mix setup"
+
+[tasks.server]
+description = "Start the Phoenix server on http://localhost:4000"
+run = "mix phx.server"
+
+[tasks.test]
+description = "Run the test suite"
+run = "mix test"
+
+[tasks.db-up]
+description = "Start Postgres 18 with pgvector on :5432 (needed from lab 13 on)"
+run = """
+docker run -d --name ash-training-postgres \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  -p 5432:5432 \
+  pgvector/pgvector:pg18
+"""
+
+[tasks.db-down]
+description = "Stop and remove the Postgres container"
+run = "docker rm -f ash-training-postgres"

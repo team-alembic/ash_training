@@ -5,9 +5,9 @@
 Each lab has a branch that contains the **starting point** for that lab — which
 also means it contains the solutions for all previous labs:
 
-- `lab-00-resources` … `lab-14-ash-ai-reactor` — starting points for labs 0–14
+- `lab-00-resources` … `lab-16-spark-extensions` — starting points for labs 0–16
   (see `labs/`)
-- `final-solution` — everything solved, including lab 14
+- `main` — everything solved, including lab 16
 
 To start (or catch up at) lab N, check out its branch, e.g.:
 
@@ -19,77 +19,119 @@ mix setup
 The branches form one linear history: each lab's solution is a single commit on
 top of the previous branch.
 
+> **Switching branches around labs 12–15?** `ash_ai` bakes in support for the
+> optional `req_llm` dependency when it is compiled, so a branch switch can
+> leave a stale build and the compiler will claim `req_llm` is missing even
+> though it is right there in `mix.exs`. Rebuild it:
+>
+> ```bash
+> mix deps.compile ash_ai --force
+> ```
+
 ### Maintaining the branches
 
 To fix something in an earlier lab, edit that lab's solution commit with an
 interactive rebase and let `--update-refs` carry all later lab branches along:
 
 ```bash
-git rebase -i --update-refs lab-00-resources~1 final-solution
+git rebase -i --update-refs lab-00-resources~1 main
 ```
 
 If a fix changes a resource's database shape, regenerate the migrations of the
 affected lab commit (and any later ones) with `mix ash.codegen` as you go.
 
+To update dependencies, use igniter rather than `mix deps.update` — it runs each
+package's upgrade task, which applies the code and config changes a new version
+needs:
+
+```bash
+mix igniter.upgrade --all
+```
+
 ## Setup
 
-To get started, you will want to ensure that you have
+You need a terminal, a code editor, Erlang, Elixir and PostgreSQL.
 
-- a terminal (Terminal.app, iTerm2)
-- a recent version of Elixir
-- a recent version of Erlang
-- a recent version of Postgresql
-- a code editor
+These instructions are for mac & linux. If you are on windows, we will figure it
+out in person. It is absolutely not a problem if you are.
 
-These instructions are for mac & linux. If you are on windows, we will figure it out in person. It is absolutely not a problem if you are.
+### Erlang & Elixir
 
-### Terminal
-
-You can use the builtin terminal. Otherwise,I recommend iTerm2.
-
-### Create database
-
-`mix setup`
-
-If you don't have elixir/erlang/postgresql installed, see below.
-
-### Installing Erlang/Elixir/Postgresql
-
-If you already have these installed, you can skip the rest of this document.
-
-#### Installing `homebrew`
+The exact versions are pinned in `.tool-versions`. Use [mise] to install them —
+it reads that file and gets everyone onto identical versions:
 
 ```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-```
+# install mise (see https://mise.jdx.dev/installing-mise.html for other options)
+curl https://mise.run | sh
 
-#### Installing `asdf`
-
-If you already have `asdf` installed, you can skip this section. If you don't know your shell, use `echo $SHELL` in your terminal. If you use a different shell, we'll figure it out in person.
-
-```bash
-brew install asdf
-
-# if your shell is bash
-echo -e "\n. \"$(brew --prefix asdf)/libexec/asdf.sh\"" >> ~/.bashrc
-echo -e "\n. \"$(brew --prefix asdf)/etc/bash_completion.d/asdf.bash\"" >> ~/.bashrc
-
-# if your shell is zsh
-echo -e "\n. \"$(brew --prefix asdf)/libexec/asdf.sh\"" >> ~/.zshrc
-echo -e "\n. \"$(brew --prefix asdf)/etc/bash_completion.d/asdf.bash\"" >> ~/.zshrc
-```
-
-#### Installing Elixir/Erlang with asdf
-
-```bash
 # in the project root directory
+mise install
+```
+
+Add mise to your shell so the pinned versions are picked up automatically
+(`echo $SHELL` if you're not sure which you use):
+
+```bash
+# bash
+echo 'eval "$(mise activate bash)"' >> ~/.bashrc
+
+# zsh
+echo 'eval "$(mise activate zsh)"' >> ~/.zshrc
+
+# fish
+echo 'mise activate fish | source' >> ~/.config/fish/config.fish
+```
+
+Open a new terminal, then check you got the right versions:
+
+```bash
+elixir --version
+```
+
+<details>
+<summary>Already using asdf instead?</summary>
+
+`.tool-versions` works with asdf too — no need to switch:
+
+```bash
 asdf install
 ```
 
-#### Installing Postgresql
+</details>
+
+[mise]: https://mise.jdx.dev
+
+### PostgreSQL
+
+From lab 13 on, the database needs the `pgvector` extension, so a plain
+PostgreSQL install is not enough. The easiest route is Docker:
 
 ```bash
-brew install postgresql@16
-brew services start postgresql@16
+mise run db-up     # Postgres 18 + pgvector on :5432, user/password postgres
+mise run db-down   # when you're done
+```
+
+<details>
+<summary>Prefer a local install?</summary>
+
+```bash
+brew install postgresql@18 pgvector
+brew services start postgresql@18
 createuser -s postgres
+```
+
+</details>
+
+### Create the database
+
+```bash
+mise run setup     # or: mix setup
+```
+
+### Running things
+
+```bash
+mise run server    # Phoenix on http://localhost:4000
+mise run test      # test suite
+mise tasks         # everything available
 ```
