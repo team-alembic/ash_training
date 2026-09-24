@@ -55,13 +55,15 @@ defmodule Twitter.Tweets.TweetTest do
     assert remaining.user_id == other_user.id
   end
 
-  test "destroying a tweet cascades to its likes", %{user: user} do
+  test "destroying a tweet archives it and keeps its likes", %{user: user} do
     tweet = Ash.create!(Tweet, %{text: "temporary"}, action: :create, actor: user)
     Ash.create!(Like, %{tweet_id: tweet.id}, action: :like, actor: user)
 
     Ash.destroy!(tweet, actor: user)
 
-    assert Ash.read!(Like) == []
+    assert Ash.read!(Tweet) == []
+    assert [%Like{tweet_id: tweet_id}] = Ash.read!(Like)
+    assert tweet_id == tweet.id
   end
 
   test "validates tweet length", %{user: user} do

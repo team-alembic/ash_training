@@ -4,7 +4,13 @@ defmodule Twitter.Tweets.Tweet do
     domain: Twitter.Tweets,
     data_layer: AshPostgres.DataLayer,
     authorizers: [Ash.Policy.Authorizer],
-    extensions: [AshGraphql.Resource, AshJsonApi.Resource, AshAi, AshOban]
+    extensions: [
+      AshGraphql.Resource,
+      AshJsonApi.Resource,
+      AshAi,
+      AshOban,
+      Twitter.Archival
+    ]
 
   vectorize do
     full_text do
