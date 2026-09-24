@@ -24,7 +24,7 @@ config :twitter, Oban,
 
 config :twitter,
   ecto_repos: [Twitter.Repo],
-  ash_domains: [Twitter.Chat, Twitter.Accounts, Twitter.Tweets, Twitter.Agents],
+  ash_domains: [Account, Twitter.Chat, Twitter.Accounts, Twitter.Tweets, Twitter.Agents],
   generators: [timestamp_type: :utc_datetime]
 
 config :ash, default_string_length_count: :codepoints
