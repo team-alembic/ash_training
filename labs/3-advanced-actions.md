@@ -119,10 +119,9 @@ counts as an update: by default it touches update defaults like `updated_at` on
 the existing record. If you want a repeat like to leave the record completely
 untouched, pass `touch_update_defaults?: false` when calling the action.
 
-So how do you know whether a given call created or updated? On PostgreSQL 17 or
-newer (which this app requires), Ash runs upserts as a single
-`MERGE ... RETURNING` statement, and the returned record carries metadata
-telling you exactly which branch was taken:
+So how do you know whether a given call created or updated? Ash runs the upsert
+as a single `INSERT ... ON CONFLICT DO UPDATE ... RETURNING` statement, and the
+returned record carries metadata telling you exactly which branch was taken:
 
 ```elixir
 like =
@@ -136,8 +135,11 @@ Ash.Resource.get_metadata(like, :upsert_action)
 
 Try liking the same tweet twice in iex and inspect the metadata each time. While
 you're at it, check the console logs (in the dev server or a dev `iex` session —
-SQL logging is turned off in the test env) — you'll see a `MERGE` statement
-instead of the classic `INSERT ... ON CONFLICT`.
+SQL logging is turned off in the test env): the `RETURNING` list of the
+`INSERT ... ON CONFLICT` statement ends with `(xmax = 0)`, which is how
+ash_postgres tells an insert from an update. A row written by an `INSERT` has
+`xmax = 0`, while a row updated by the `DO UPDATE` branch carries the current
+transaction id.
 
 7. Next up, we'll create the `:unlike` action. Destroying is similar to the
    `:like` action, in that we want to allow it to be repeatable without a
