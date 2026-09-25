@@ -12,11 +12,12 @@
 
 ## Steps
 
-Let's add `:like` and `:unlike` actions, to allow creating and destroying likes for tweets.
-We will add these actions to the `Twitter.Tweets.Like` resource (not `Twitter.Tweets.Tweet`!)
+Let's add `:like` and `:unlike` actions, to allow creating and destroying likes
+for tweets. We will add these actions to the `Twitter.Tweets.Like` resource (not
+`Twitter.Tweets.Tweet`!)
 
-1. We'll start with `:like`, which accepts the `:tweet_id`.
-   If you added a temporary `:create` action in the previous lab, remove it now.
+1. We'll start with `:like`, which accepts the `:tweet_id`. If you added a
+   temporary `:create` action in the previous lab, remove it now.
 
 ```elixir
 create :like do
@@ -24,11 +25,11 @@ create :like do
 end
 ```
 
-If you try to run this action in iex right now, you'll see that this doesn't work.
-This is because there is a relationship to `:user` that is required.
+If you try to run this action in iex right now, you'll see that this doesn't
+work. This is because there is a relationship to `:user` that is required.
 
-We want to associate the current actor with the like.
-We _could_ accept `:user_id` as input, but what we actually want is for whoever is doing the
+We want to associate the current actor with the like. We _could_ accept
+`:user_id` as input, but what we actually want is for whoever is doing the
 action to be associated, not just any supplied user.
 
 For that, we will use a builtin `change` called `relate_actor`.
@@ -41,7 +42,8 @@ create :like do
 end
 ```
 
-2. Now, let's add a "like" button in `index.ex`. Add the following code above the other `<:action` tags.
+2. Now, let's add a "like" button in `index.ex`. Add the following code above
+   the other `<:action` tags.
 
 ```heex
 <:action :let={{_id, tweet}}>
@@ -51,8 +53,9 @@ end
 </:action>
 ```
 
-3. Then we'll add an event handler for it. Add this code under the other `handle_event` definition,
-   and uncomment the `refetch_tweet` helper at the bottom of the file.
+3. Then we'll add an event handler for it. Add this code under the other
+   `handle_event` definition, and uncomment the `refetch_tweet` helper at the
+   bottom of the file.
 
 ```elixir
 def handle_event("like", %{"id" => tweet_id}, socket) do
@@ -64,12 +67,14 @@ def handle_event("like", %{"id" => tweet_id}, socket) do
 end
 ```
 
-4. Now, if we press our `like` button in the UI, we can see the like being inserted in the console logs.
+4. Now, if we press our `like` button in the UI, we can see the like being
+   inserted in the console logs.
 
 If we push it _again_, we create _another_ like!
 
-This isn't ideal, as we want to ensure that each user can only like a given tweet one time.
-To address this, we'll add an `identity`, expressing that a user can only like a tweet once.
+This isn't ideal, as we want to ensure that each user can only like a given
+tweet one time. To address this, we'll add an `identity`, expressing that a user
+can only like a tweet once.
 
 ```elixir
 identities do
@@ -77,19 +82,23 @@ identities do
 end
 ```
 
-5. Now lets run our codegen tasks! Run `mix ash.codegen add_unique_user_tweet_identity` to generate the
-   migration, and then `mix ash.migrate` to apply it. You will notice that the migration will result in an
-   error if you have any duplicate likes in your database. Run `mix ash.reset` in this case.
+5. Now lets run our codegen tasks! Run
+   `mix ash.codegen add_unique_user_tweet_identity` to generate the migration,
+   and then `mix ash.migrate` to apply it. You will notice that the migration
+   will result in an error if you have any duplicate likes in your database. Run
+   `mix ash.reset` in this case.
 
-6. Now, if we create a second like, we see an error instead of allowing duplicates!
+6. Now, if we create a second like, we see an error instead of allowing
+   duplicates!
 
 We can handle this in one of two ways.
 
-First, we could use `Ash.create()`, which returns errors instead of `Ash.create!()` which
-raises them, check the response for a specific error and ignore the error if it matches our issue.
+First, we could use `Ash.create()`, which returns errors instead of
+`Ash.create!()` which raises them, check the response for a specific error and
+ignore the error if it matches our issue.
 
-However, our preferred approach here is to perform an "upsert".
-This means we create the record if it doesn't exist, or update it if it is.
+However, our preferred approach here is to perform an "upsert". This means we
+create the record if it doesn't exist, or update it if it is.
 
 Modify your `like` action to be an upsert
 
@@ -102,17 +111,18 @@ create :like do
 end
 ```
 
-This will create a record, unless there is a record matching the `:user_id` and `:tweet_id`
-combination, in which case it will update it instead.
+This will create a record, unless there is a record matching the `:user_id` and
+`:tweet_id` combination, in which case it will update it instead.
 
-In this case there are no other attributes to change, but the upsert still counts as an update:
-by default it touches update defaults like `updated_at` on the existing record. If you want a
-repeat like to leave the record completely untouched, pass `touch_update_defaults?: false` when
-calling the action.
+In this case there are no other attributes to change, but the upsert still
+counts as an update: by default it touches update defaults like `updated_at` on
+the existing record. If you want a repeat like to leave the record completely
+untouched, pass `touch_update_defaults?: false` when calling the action.
 
-So how do you know whether a given call created or updated? On PostgreSQL 17 or newer (which
-this app requires), Ash runs upserts as a single `MERGE ... RETURNING` statement, and the
-returned record carries metadata telling you exactly which branch was taken:
+So how do you know whether a given call created or updated? On PostgreSQL 17 or
+newer (which this app requires), Ash runs upserts as a single
+`MERGE ... RETURNING` statement, and the returned record carries metadata
+telling you exactly which branch was taken:
 
 ```elixir
 like =
@@ -124,19 +134,22 @@ Ash.Resource.get_metadata(like, :upsert_action)
 # => :insert the first time, :update when the like already existed
 ```
 
-Try liking the same tweet twice in iex and inspect the metadata each time. While you're at it,
-check the console logs (in the dev server or a dev `iex` session — SQL logging is turned off in
-the test env) — you'll see a `MERGE` statement instead of the classic `INSERT ... ON CONFLICT`.
+Try liking the same tweet twice in iex and inspect the metadata each time. While
+you're at it, check the console logs (in the dev server or a dev `iex` session —
+SQL logging is turned off in the test env) — you'll see a `MERGE` statement
+instead of the classic `INSERT ... ON CONFLICT`.
 
-7. Next up, we'll create the `:unlike` action. Destroying is similar to the `:like`
-   action, in that we want to allow it to be repeatable without a consequence.
+7. Next up, we'll create the `:unlike` action. Destroying is similar to the
+   `:like` action, in that we want to allow it to be repeatable without a
+   consequence.
 
-We will leverage an `argument` for this: destroy actions don't "accept" attributes (we're
-destroying the record, not updating fields), so the `tweet_id` comes in as an argument that
-feeds the filter below.
+We will leverage an `argument` for this: destroy actions don't "accept"
+attributes (we're destroying the record, not updating fields), so the `tweet_id`
+comes in as an argument that feeds the filter below.
 
 To accomplish this, we will use the `filter/1` change on our destroy action.
-This will make the destroy action apply only to the given `tweet_id`, and the current user.
+This will make the destroy action apply only to the given `tweet_id`, and the
+current user.
 
 ```elixir
 destroy :unlike do
@@ -148,10 +161,11 @@ destroy :unlike do
 end
 ```
 
-To call this action, we don't want to use `Ash.destroy`, because that expects a record or a changeset to be
-provided. i.e `Ash.destroy(like)`. In this case, we want to destroy the like that matches some
-criteria, not a specific like. For that, even though we are destroying only a single thing,
-we would use `Ash.bulk_destroy!`. For example:
+To call this action, we don't want to use `Ash.destroy`, because that expects a
+record or a changeset to be provided. i.e `Ash.destroy(like)`. In this case, we
+want to destroy the like that matches some criteria, not a specific like. For
+that, even though we are destroying only a single thing, we would use
+`Ash.bulk_destroy!`. For example:
 
 ```elixir
 # this is an example, not something to add to your code
@@ -163,19 +177,23 @@ Ash.bulk_destroy!(
 )
 ```
 
-`Ash.bulk_destroy!` is one of a family of "bulk verbs" — there's also `Ash.bulk_create` and
-`Ash.bulk_update`, and even `Ash.update_many`, which updates a list of records each with its
-own distinct input. We won't use the others in this lab, but it's worth knowing they exist.
+`Ash.bulk_destroy!` is one of a family of "bulk verbs" — there's also
+`Ash.bulk_create` and `Ash.bulk_update`, and even `Ash.update_many`, which
+updates a list of records each with its own distinct input. We won't use the
+others in this lab, but it's worth knowing they exist.
 
-8. Now, try it on your own! Lets add an "unlike" button next to our "like" button, and add a `handle_event`
-   function for it. Add a button, just like the `"like"` button in the same `<:action` block, but for unliking.
-   Make the arrow on the button point down.
+8. Now, try it on your own! Lets add an "unlike" button next to our "like"
+   button, and add a `handle_event` function for it. Add a button, just like the
+   `"like"` button in the same `<:action` block, but for unliking. Make the
+   arrow on the button point down.
 
-9. Then, add an event handler, just like our `"like"` event handler. Use `Ash.bulk_destroy!`, like in the example above
-   to delete the relevant like. Check the logs to confirm that you see a `DELETE` statement in postgres.
+9. Then, add an event handler, just like our `"like"` event handler. Use
+   `Ash.bulk_destroy!`, like in the example above to delete the relevant like.
+   Check the logs to confirm that you see a `DELETE` statement in postgres.
 
-10. Now, if you try to remove a tweet that has any likes, an error will be raised. This is because we have
-    a foreign key constraint on the `likes` table.
+10. Now, if you try to remove a tweet that has any likes, an error will be
+    raised. This is because we have a foreign key constraint on the `likes`
+    table.
 
 ```elixir
 postgres do
@@ -188,42 +206,47 @@ end
 
 The index supports loading and counting likes by tweet as the dataset grows.
 
-11. Don't forget to run your codegen tasks! Run `mix ash.codegen add_like_tweet_on_delete`
-    to generate the migration, then `mix ash.migrate` to apply it.
+11. Don't forget to run your codegen tasks! Run
+    `mix ash.codegen add_like_tweet_on_delete` to generate the migration, then
+    `mix ash.migrate` to apply it.
 
-12. We can also give this same `relate_actor/1` treatment for our `:create` action on `Twitter.Tweets.Tweet`.
-    Remove `:user_id` from the `accept` list, and add the `change relate_actor(:user)` to the `:create` action.
+12. We can also give this same `relate_actor/1` treatment for our `:create`
+    action on `Twitter.Tweets.Tweet`. Remove `:user_id` from the `accept` list,
+    and add the `change relate_actor(:user)` to the `:create` action.
 
-Then you can remove the following code from the `"save"` handler in `lib/twitter_web/live/tweet_live/form.ex`.
+Then you can remove the following code from the `"save"` handler in
+`lib/twitter_web/live/tweet_live/form.ex`.
 
 ```elixir
 params = put_in(params, ["tweet", "user_id"], socket.assigns.current_user.id)
 ```
 
-This change breaks the existing tests in `test/twitter/tweets/tweet_test.exs`, which still pass
-`user_id:` as input. Update them to pass the user as the actor instead, e.g.
+This change breaks the existing tests in `test/twitter/tweets/tweet_test.exs`,
+which still pass `user_id:` as input. Update them to pass the user as the actor
+instead, e.g.
 `Ash.create!(Tweet, %{text: "first"}, action: :create, actor: user)`.
 
 13. Now we want to make sure that the tweet's text is not too long.
 
-For that, we'll use a `validation` on `Twitter.Tweets.Tweet` that ensures that the tweet's text is
-not longer than 255 characters.
+For that, we'll use a `validation` on `Twitter.Tweets.Tweet` that ensures that
+the tweet's text is not longer than 255 characters.
 
 ```elixir
   validate string_length(:text, max: 255)
 ```
 
-Add this to the `:create` and `:update` action. Then, try to create a long tweet.
-You'll get an error. It won't be handled gracefully, but we'll get to that later with `AshPhoenix.Form`.
+Add this to the `:create` and `:update` action. Then, try to create a long
+tweet. You'll get an error. It won't be handled gracefully, but we'll get to
+that later with `AshPhoenix.Form`.
 
-If duplicating the same validation in two actions bothers you: Ash has a `pipelines` DSL that
-lets you define a named group of changes/validations once and compose it into actions with
-`pipe_through`. We'll stick with the direct approach here, but keep it in mind as your
-resources grow.
+If duplicating the same validation in two actions bothers you: Ash has a
+`pipelines` DSL that lets you define a named group of changes/validations once
+and compose it into actions with `pipe_through`. We'll stick with the direct
+approach here, but keep it in mind as your resources grow.
 
 14. Now, lets do some customization of the action we use to read our tweets.
-    We'll add a `:feed` action, and we'll modify this action to show tweets in reverse chronological order.
-    For that, we can use a `prepare` statement.
+    We'll add a `:feed` action, and we'll modify this action to show tweets in
+    reverse chronological order. For that, we can use a `prepare` statement.
 
 ```elixir
 read :feed do
@@ -231,12 +254,15 @@ read :feed do
 end
 ```
 
-15. Now we can use that in the `mount/3` function in `index.ex`, by changing the `action: :read` option to `action: :feed` when we call `Ash.read!`.
+15. Now we can use that in the `mount/3` function in `index.ex`, by changing the
+    `action: :read` option to `action: :feed` when we call `Ash.read!`.
 
 ## Try on your own
 
 - Sort the feed in the opposite direction
 - Sort the feed by text
 - Customize length validations on the tweet
-- Check the builtin validations (for example `byte_size` or `attribute_in`), and try some out in your actions
-- Like the same tweet twice and inspect `Ash.Resource.get_metadata(like, :upsert_action)` each time
+- Check the builtin validations (for example `byte_size` or `attribute_in`), and
+  try some out in your actions
+- Like the same tweet twice and inspect
+  `Ash.Resource.get_metadata(like, :upsert_action)` each time

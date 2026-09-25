@@ -75,8 +75,8 @@ library under the hood to talk to any supported provider (OpenAI, Google,
 Cohere, Voyage, ...). You point it at a provider with a model spec string like
 `"openai:text-embedding-3-small"` — no HTTP client code required.
 
-The only setup needed is telling ReqLLM about your API key — we already did
-this in Lab 12, in `config/runtime.exs`:
+The only setup needed is telling ReqLLM about your API key — we already did this
+in Lab 12, in `config/runtime.exs`:
 
 ```elixir
 config :req_llm, openai_api_key: openai_api_key
@@ -94,12 +94,12 @@ tuple of module and options:
  dimensions: 1536}
 ```
 
-> **Aside — bring your own provider**: Under the hood, an embedding model is
-> any module implementing the `AshAi.EmbeddingModel` behavior, which has just
-> two callbacks: `dimensions/1` (the vector size) and `generate/2` (texts in,
-> `{:ok, vectors}` out). If you ever need a provider ReqLLM doesn't support —
-> or a local model — you can write your own module with
-> `use AshAi.EmbeddingModel` and pass it in place of the built-in one.
+> **Aside — bring your own provider**: Under the hood, an embedding model is any
+> module implementing the `AshAi.EmbeddingModel` behavior, which has just two
+> callbacks: `dimensions/1` (the vector size) and `generate/2` (texts in,
+> `{:ok, vectors}` out). If you ever need a provider ReqLLM doesn't support — or
+> a local model — you can write your own module with `use AshAi.EmbeddingModel`
+> and pass it in place of the built-in one.
 
 ### 5. Add Vectorization to Tweet Resource
 
@@ -250,8 +250,8 @@ tweet =
 tweet.full_text_vector  # Now you'll see a long array of floats (1536 dimensions)
 ```
 
-**Note**: In the test environment Oban is configured with `testing: :manual`,
-so vectorization jobs are never run automatically. In tests, drain the queue
+**Note**: In the test environment Oban is configured with `testing: :manual`, so
+vectorization jobs are never run automatically. In tests, drain the queue
 explicitly with `Oban.drain_queue(queue: :tweet_vectorizer)`.
 
 ### 8. Create a Semantic Search Action
@@ -336,16 +336,16 @@ end
 
 As in Lab 12, add `:semantic_search_tweets` to the expected tools list in
 `test/twitter/tweets/tweet_test.exs`. (We leave the chat agent's explicit
-`tools:` list in `respond.ex` alone for now — wiring RAG into the chat is one
-of the "Try on your own" exercises. This is also a good moment to revisit the
-`eval_actions` block from Lab 11 if you want Lua scripts to search
-semantically too.)
+`tools:` list in `respond.ex` alone for now — wiring RAG into the chat is one of
+the "Try on your own" exercises. This is also a good moment to revisit the
+`eval_actions` block from Lab 11 if you want Lua scripts to search semantically
+too.)
 
 ### 9. Test Semantic Search
 
-Before searching, seed a handful of tweets on different topics (3-5 is plenty
-— say cooking, sports, and programming) so there's something for the ranking
-to be observable against.
+Before searching, seed a handful of tweets on different topics (3-5 is plenty —
+say cooking, sports, and programming) so there's something for the ranking to be
+observable against.
 
 In IEx, try searching:
 
@@ -489,8 +489,8 @@ Twitter.Tweets.ask("What are people tweeting about Elixir?")
 - Add vectorization to user bios and search users by semantic similarity
 
 - Implement multiple vectorization strategies (`:after_action` vs `:ash_oban`)
-  and compare performance (hint: with `:after_action` the embedding update is
-  no longer run by AshOban, so the policy bypass needs a different check:
+  and compare performance (hint: with `:after_action` the embedding update is no
+  longer run by AshOban, so the policy bypass needs a different check:
   `bypass action(:ash_ai_update_embeddings) do authorize_if AshAi.Checks.ActorIsAshAi end`)
 
 - Create a `regenerate_embeddings` action to re-vectorize all existing tweets
@@ -502,9 +502,9 @@ Twitter.Tweets.ask("What are people tweeting about Elixir?")
   tweets from the last week)
 
 - Experiment with different embedding models — with the built-in ReqLLM model
-  this is just a different model string (e.g.,
-  `"openai:text-embedding-3-large"` for higher quality, or even another
-  provider entirely — just remember to update `dimensions` to match)
+  this is just a different model string (e.g., `"openai:text-embedding-3-large"`
+  for higher quality, or even another provider entirely — just remember to
+  update `dimensions` to match)
 
 - Add a `relevance_score` to show how similar each context tweet is to the query
 

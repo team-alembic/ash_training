@@ -60,15 +60,15 @@ end
 ```
 
 Each `define` generates a `{:ok, _}`/`{:error, _}` returning function
-(`Twitter.Tweets.feed()`), a raising `!` variant (`Twitter.Tweets.feed!()`),
-and `can_*`/`can_*?` helpers that check your policies without running the
-action. Names ending in `?` instead generate a single predicate function that
-returns a plain boolean.
+(`Twitter.Tweets.feed()`), a raising `!` variant (`Twitter.Tweets.feed!()`), and
+`can_*`/`can_*?` helpers that check your policies without running the action.
+Names ending in `?` instead generate a single predicate function that returns a
+plain boolean.
 
 ### Forms via the Code Interface (`AshPhoenix`)
 
-Add the `AshPhoenix` extension to the domain to also get a `form_to_*`
-function for each `define`:
+Add the `AshPhoenix` extension to the domain to also get a `form_to_*` function
+for each `define`:
 
 ```elixir
 use Ash.Domain,
@@ -118,7 +118,8 @@ end
 
 ### Recompile after changes
 
-If you are running the browser application, you can refresh the browser. Otherwise:
+If you are running the browser application, you can refresh the browser.
+Otherwise:
 
 ```elixir
 recompile

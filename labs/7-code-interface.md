@@ -7,11 +7,12 @@
 ## Steps
 
 Now, if we look at the places that we're interacting with our application, we're
-calling functions on the `Ash` module, and providing our resource. There is nothing wrong
-with doing this, but we want to provide an interface to our application, _even for in-code usage_.
+calling functions on the `Ash` module, and providing our resource. There is
+nothing wrong with doing this, but we want to provide an interface to our
+application, _even for in-code usage_.
 
-1. To start, let's add an interface for our `:feed` action.
-   We do this inside the block for the resource we want to call in our domain `Twitter.Tweets`.
+1. To start, let's add an interface for our `:feed` action. We do this inside
+   the block for the resource we want to call in our domain `Twitter.Tweets`.
 
 ```elixir
 resource Twitter.Tweets.Tweet do
@@ -19,7 +20,8 @@ resource Twitter.Tweets.Tweet do
 end
 ```
 
-2. We can then replace that in our logic to fetch tweets in our `mount/3` function in `index.ex`
+2. We can then replace that in our logic to fetch tweets in our `mount/3`
+   function in `index.ex`
 
 ```elixir
 |> stream(
@@ -28,10 +30,10 @@ end
 )
 ```
 
-3. Then, we can add an interface for getting an individual tweet.
-   We'll call this `:get_tweet`. Since the action name is not the same as the
-   function, we'll need to add the `action` option. We want it to
-   filter by `id`, and expect a single result, so we'll use `get_by: [:id]`
+3. Then, we can add an interface for getting an individual tweet. We'll call
+   this `:get_tweet`. Since the action name is not the same as the function,
+   we'll need to add the `action` option. We want it to filter by `id`, and
+   expect a single result, so we'll use `get_by: [:id]`
 
 ```elixir
 resource Twitter.Tweets.Tweet do
@@ -40,8 +42,9 @@ resource Twitter.Tweets.Tweet do
 end
 ```
 
-4. Now lets use that in our `apply_action` function for `:edit` in `lib/twitter_web/live/tweet_live/form.ex`.
-   Swap the `Ash.get!` call for our new interface — and keep the authorization check we added in Lab 6:
+4. Now lets use that in our `apply_action` function for `:edit` in
+   `lib/twitter_web/live/tweet_live/form.ex`. Swap the `Ash.get!` call for our
+   new interface — and keep the authorization check we added in Lab 6:
 
 ```elixir
 defp apply_action(socket, :edit, %{"id" => id}) do
@@ -57,8 +60,8 @@ Replace the remaining direct `Ash.get!` calls as well: the one in
 (keep passing `load: @tweet_loads` there for now). The domain interface should
 be our consistent in-code entry point for fetching tweets.
 
-5. Lastly, we'll add an interface for removing tweets. Lets call it `:delete_tweet`.
-   and have it use the `:destroy` action.
+5. Lastly, we'll add an interface for removing tweets. Lets call it
+   `:delete_tweet`. and have it use the `:destroy` action.
 
 ```elixir
 define :delete_tweet, action: :destroy
@@ -66,7 +69,8 @@ define :delete_tweet, action: :destroy
 
 6. And then we can use that in our `handle_event/3` function for `"delete"`
 
-Notice that the code interface can take just the id of the record to delete, simplifying this operation greatly.
+Notice that the code interface can take just the id of the record to delete,
+simplifying this operation greatly.
 
 ```elixir
 def handle_event("delete", %{"id" => id}, socket) do
@@ -76,7 +80,8 @@ def handle_event("delete", %{"id" => id}, socket) do
 end
 ```
 
-7. We can also clean up and simplify our `like/unlike` calls. We'll start with `like`:
+7. We can also clean up and simplify our `like/unlike` calls. We'll start with
+   `like`:
 
 ```elixir
 resource Twitter.Tweets.Like do
@@ -84,8 +89,8 @@ resource Twitter.Tweets.Like do
 end
 ```
 
-8. Now, we can replace our code for liking in our `handle_event/3` function for `"like"` with
-   this simple snippet:
+8. Now, we can replace our code for liking in our `handle_event/3` function for
+   `"like"` with this simple snippet:
 
 ```elixir
 Twitter.Tweets.like!(tweet_id, actor: socket.assigns.current_user)
@@ -109,9 +114,10 @@ end
 
 10. See if you can work out replacing the `unlike` code with our new interface!
 
-11. You may have noticed we're still passing `load: @tweet_loads` at every call site.
-    A code interface can carry its own defaults using the `default_options` option
-    (the `Twitter.Chat` domain we'll build in Lab 12 uses this same trick):
+11. You may have noticed we're still passing `load: @tweet_loads` at every call
+    site. A code interface can carry its own defaults using the
+    `default_options` option (the `Twitter.Chat` domain we'll build in Lab 12
+    uses this same trick):
 
 ```elixir
 resource Twitter.Tweets.Tweet do
@@ -167,14 +173,17 @@ end
 you the usual `{:ok, boolean}` tuple.
 
 Note that this action reads `context.actor.id` directly, so it will crash if
-called without an actor. That's fine here — our LiveViews always pass one —
-but guard against a `nil` actor if you expose it anywhere anonymous.
+called without an actor. That's fine here — our LiveViews always pass one — but
+guard against a `nil` actor if you expose it anywhere anonymous.
 
 ## Try on your own
 
-- In `iex -S mix` read the generated docs for these functions. `h Twitter.Tweets.like`
-- Every `define` also generates `can_*`/`can_*?` helpers that check your policies
-  without running the action. Try `Twitter.Tweets.can_delete_tweet?(socket.assigns.current_user, tweet)`
-  and use it to hide the delete button for tweets the user can't delete.
+- In `iex -S mix` read the generated docs for these functions.
+  `h Twitter.Tweets.like`
+- Every `define` also generates `can_*`/`can_*?` helpers that check your
+  policies without running the action. Try
+  `Twitter.Tweets.can_delete_tweet?(socket.assigns.current_user, tweet)` and use
+  it to hide the delete button for tweets the user can't delete.
 - Add a `:get_user_by_email` interface
-- Add a `:popular_tweets` action and interface, that shows the top 10 most popular tweets.
+- Add a `:popular_tweets` action and interface, that shows the top 10 most
+  popular tweets.

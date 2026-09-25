@@ -71,8 +71,8 @@ mix ash_ai.gen.chat --live
 
 Useful flags: `--provider` (e.g. `anthropic` or `gemini` instead of the OpenAI
 default), `--route` (defaults to `/chat`), `--live-component` (an embeddable
-LiveComponent instead of a full-page LiveView), and `--user`/`--domain` to
-point at existing resources.
+LiveComponent instead of a full-page LiveView), and `--user`/`--domain` to point
+at existing resources.
 
 The generator will create:
 
@@ -83,8 +83,8 @@ The generator will create:
 - Routes for accessing the chat
 
 It also touches more than the chat resources: it installs `oban` (via
-`ash_oban`), `mdex`, and `lumis` as dependencies, configures and supervises
-Oban (in `config/config.exs` and `lib/twitter/application.ex`, plus
+`ash_oban`), `mdex`, and `lumis` as dependencies, configures and supervises Oban
+(in `config/config.exs` and `lib/twitter/application.ex`, plus
 `config :twitter, Oban, testing: :manual` in `config/test.exs`), generates the
 Oban and chat migrations, and adds the `:req_llm` API key config from step 1 to
 `config/runtime.exs` if it's missing.
@@ -143,9 +143,9 @@ end
 
 Add owner checks for message creation/destroy and explicit bypasses for the
 generated internal Oban/AshAi actions. When a private `conversation_id` is
-provided to message creation, load it through
-`Twitter.Chat.get_conversation!/2` with the current action context before using
-it. A private argument is not an authorization check.
+provided to message creation, load it through `Twitter.Chat.get_conversation!/2`
+with the current action context before using it. A private argument is not an
+authorization check.
 
 Finally, pass `actor: socket.assigns.current_user` to `message_history!` in the
 generated LiveView. Every read that relies on actor-scoped policies must receive
@@ -155,8 +155,8 @@ the actor.
 
 Now we'll expose more Tweet actions as tools that the AI can call. In Lab 11 we
 already added the `AshAi` extension to the `Twitter.Tweets` domain along with a
-`tools` block containing the `:read_feed` tool — so open
-`lib/twitter/tweets.ex` and add two more tools to that existing block:
+`tools` block containing the `:read_feed` tool — so open `lib/twitter/tweets.ex`
+and add two more tools to that existing block:
 
 ```elixir
 tools do
@@ -186,9 +186,9 @@ as you add new ones.
 Then make the tools available to the chat agent. The generated `respond.ex`
 ships with `tools: true`, which exposes every tool in the app to the agent —
 including `:chat_list_conversations` and `:chat_message_history`, two starter
-tools the generator defined on the `Twitter.Chat` domain. That's convenient,
-but implicit: a tool added anywhere in the app silently becomes available to
-the chat agent. Replace it with an explicit list in
+tools the generator defined on the `Twitter.Chat` domain. That's convenient, but
+implicit: a tool added anywhere in the app silently becomes available to the
+chat agent. Replace it with an explicit list in
 `lib/twitter/chat/message/changes/respond.ex`:
 
 ```elixir
@@ -224,8 +224,8 @@ Watch the console to see the AI making tool calls to your Tweet actions.
 
 ### 7. Configure Tool Calling Behavior
 
-You can customize how tools behave with options in the tool definition. Update
-a tool in `lib/twitter/tweets.ex`:
+You can customize how tools behave with options in the tool definition. Update a
+tool in `lib/twitter/tweets.ex`:
 
 ```elixir
 tool :read_feed, Twitter.Tweets.Tweet, :feed do
@@ -242,8 +242,8 @@ end
 Other useful options: `action_parameters` to limit which action arguments the
 LLM can set, and `identity false` on update/destroy tools to stop the LLM from
 addressing records by identity. Note that only `public? true` attributes can be
-filtered or sorted on — private attributes can still be `load`ed into
-responses, but the AI can't query by them.
+filtered or sorted on — private attributes can still be `load`ed into responses,
+but the AI can't query by them.
 
 ### 8. Add a Like Tool
 
@@ -303,7 +303,8 @@ def handle_info(%{topic: "tweet:" <> _liked_or_unliked}, socket) do
 end
 ```
 
-Now when the AI likes a tweet in the chat, the feed updates live in the other tab.
+Now when the AI likes a tweet in the chat, the feed updates live in the other
+tab.
 
 ## Try on your own
 

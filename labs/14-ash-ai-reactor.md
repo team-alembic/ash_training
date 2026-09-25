@@ -33,9 +33,9 @@ have the Ash.Reactor extension available. In `mix.exs`, verify you have:
 Reactor is included as a dependency of Ash — you can confirm with
 `mix deps | grep reactor`. No changes should be needed.
 
-The LLM calls in this lab go through the same ReqLLM setup you configured in
-Lab 12 (provider API keys under `config :req_llm` in `config/runtime.exs`), so
-no additional AI dependencies are needed here.
+The LLM calls in this lab go through the same ReqLLM setup you configured in Lab
+12 (provider API keys under `config :req_llm` in `config/runtime.exs`), so no
+additional AI dependencies are needed here.
 
 ### 2. Create Prompt Actions for RAG Pipeline
 
@@ -103,8 +103,8 @@ end
 ```
 
 As in Lab 13, the first argument to `prompt/2` is a ReqLLM model spec string in
-`"provider:model-name"` format. Swapping providers is a one-string change —
-e.g. `"anthropic:claude-sonnet-4-5"` — with no other code changes.
+`"provider:model-name"` format. Swapping providers is a one-string change — e.g.
+`"anthropic:claude-sonnet-4-5"` — with no other code changes.
 
 Update the policy to allow both actions:
 
@@ -117,8 +117,8 @@ end
 ### 3. Create a Reactor Module for RAG
 
 Now create a Reactor that orchestrates the workflow by calling Ash actions.
-Create `lib/twitter/ai/rag_reactor.ex` (the `lib/twitter/ai/` directory
-doesn't exist yet — create it first):
+Create `lib/twitter/ai/rag_reactor.ex` (the `lib/twitter/ai/` directory doesn't
+exist yet — create it first):
 
 ```elixir
 defmodule Twitter.Ai.RagReactor do
@@ -216,11 +216,10 @@ Key improvements:
 The Context section mentioned that Reactor supports retries and compensating
 actions when configured — here is what that looks like. Generic `step`s carry
 Reactor's compensation machinery: a `compensate` callback (return `:retry` to
-run the step again), `max_retries` to bound the attempts, and `backoff` to
-space them out. LLM APIs are exactly the kind of flaky dependency (rate
-limits, timeouts) this exists for. Try swapping the `:generate_answer` action
-step for a generic step that calls the same prompt action, but retries on
-failure:
+run the step again), `max_retries` to bound the attempts, and `backoff` to space
+them out. LLM APIs are exactly the kind of flaky dependency (rate limits,
+timeouts) this exists for. Try swapping the `:generate_answer` action step for a
+generic step that calls the same prompt action, but retries on failure:
 
 ```elixir
 # A retry-capable drop-in for the :generate_answer step
@@ -255,8 +254,8 @@ The rollback half of the saga applies to steps that write data: Ash.Reactor's
 `create`, `update`, `destroy`, and `action` steps accept `undo` and
 `undo_action` options, and Reactor calls the compensating action automatically
 when a later step fails. Our RAG workflow is read-only, so there is nothing to
-roll back here — but the same reactor could seed tweets with a `create` step
-and have them undone if answer generation blew up.
+roll back here — but the same reactor could seed tweets with a `create` step and
+have them undone if answer generation blew up.
 
 ### 4. Add a Reactor-Based Action to Tweet
 
@@ -311,8 +310,8 @@ Only the last line is new — leave the existing `define`s (including their
 Now you can call the action directly:
 `Twitter.Tweets.ask_tweet_reactor_question!("What are people saying about Elixir?")`
 
-(As with all code interfaces, the non-bang variant returns `{:ok, result}`;
-the `!` variant returns the result map directly.)
+(As with all code interfaces, the non-bang variant returns `{:ok, result}`; the
+`!` variant returns the result map directly.)
 
 ### 6. Test the Reactor-Based RAG
 
@@ -365,8 +364,8 @@ reformulated the question for better semantic search results.
   `callback:` fails to compile (functions cannot be escaped into the module),
   and an MFA tuple like `{MyModule, :my_fun}` fails `ReqLLM.Tool.new!/1`'s
   `function_exported?` check because the module isn't compiled yet at DSL
-  evaluation time. What works: define the callback in a separate module and
-  pass a remote capture — `&MyModule.my_fun/1`
+  evaluation time. What works: define the callback in a separate module and pass
+  a remote capture — `&MyModule.my_fun/1`
 - Add a `guard` or `where` clause so `:generate_answer` is skipped when
   `:fetch_context_tweets` returns no tweets
 - Build a seeding reactor that uses Ash.Reactor's `bulk_create` step with an

@@ -7,10 +7,10 @@
 
 ## Steps
 
-1.  We can simplify a lot of our form code using `AshPhoenix.Form`.
-    We get error handling, automatic setting of values, and more.
-    We'll be working in the tweet form LiveView, `TwitterWeb.TweetLive.Form`,
-    which lives in `lib/twitter_web/live/tweet_live/form.ex`.
+1.  We can simplify a lot of our form code using `AshPhoenix.Form`. We get error
+    handling, automatic setting of values, and more. We'll be working in the
+    tweet form LiveView, `TwitterWeb.TweetLive.Form`, which lives in
+    `lib/twitter_web/live/tweet_live/form.ex`.
 
 2.  The recommended way to build forms is through your domain's code interface.
     Any `define` in the domain gets a matching `form_to_*` function when the
@@ -94,9 +94,9 @@ defp apply_action(socket, :new, _params) do
 end
 ```
 
-5.  Now, update your `"save"` handler to use `AshPhoenix.Form.submit/2`.
-    Notice how `AshPhoenix.Form.submit/2` works regardless of the action type —
-    the form already knows whether it's creating or updating.
+5.  Now, update your `"save"` handler to use `AshPhoenix.Form.submit/2`. Notice
+    how `AshPhoenix.Form.submit/2` works regardless of the action type — the
+    form already knows whether it's creating or updating.
 
 ```elixir
 @impl true
@@ -116,8 +116,8 @@ def handle_event("save", %{"tweet" => tweet_params}, socket) do
 end
 ```
 
-On success we navigate away; on failure we re-assign the form, which now
-carries the errors for the template to display.
+On success we navigate away; on failure we re-assign the form, which now carries
+the errors for the template to display.
 
 `form.source.type` works because `assign_form/1` wrapped the form in
 `to_form/1`: `@form` is a `Phoenix.HTML.Form` whose `source` is the underlying
@@ -137,8 +137,9 @@ carries the errors for the template to display.
 
 Notice the `phx-change="validate"` binding.
 
-7.  We can now add a `handle_event` function for the `"validate"` event.
-    This adds validations on keystroke, and `AshPhoenix.Form` handles the complexity of that.
+7.  We can now add a `handle_event` function for the `"validate"` event. This
+    adds validations on keystroke, and `AshPhoenix.Form` handles the complexity
+    of that.
 
 ```elixir
 def handle_event("validate", %{"tweet" => tweet_params}, socket) do
@@ -146,6 +147,6 @@ def handle_event("validate", %{"tweet" => tweet_params}, socket) do
 end
 ```
 
-8.  Now we can try out our tweet form, and if you violate any validations on the tweet,
-    you will see the validation errors automatically appear as soon as you meet the error conditions.
-    Try writing more than the character limit.
+8.  Now we can try out our tweet form, and if you violate any validations on the
+    tweet, you will see the validation errors automatically appear as soon as
+    you meet the error conditions. Try writing more than the character limit.

@@ -21,8 +21,8 @@ In this lab, we'll set up two MCP servers:
    tools like reading the tweet feed
 
 Then, as a finale, we'll add **ash_lua** to the production server — instead of
-one tool per action, the LLM gets exactly two tools: one to read the exposed
-API surface and one to execute a composed Lua script against it.
+one tool per action, the LLM gets exactly two tools: one to read the exposed API
+surface and one to execute a composed Lua script against it.
 
 ## Steps
 
@@ -99,8 +99,8 @@ https://hexdocs.pm/tidewave/mcp_proxy.html):
 
 Try to ask your agent which Ash resources we have in the project.
 
-No MCP client set up? You can also poke an MCP server with plain curl — see
-the smoke test in step 6; the same commands work against `/ash_ai/mcp`.
+No MCP client set up? You can also poke an MCP server with plain curl — see the
+smoke test in step 6; the same commands work against `/ash_ai/mcp`.
 
 ### 4. Define Tools in the Domain
 
@@ -156,9 +156,9 @@ fine-grained control over what's available.
 
 Add a **new, separate** `scope "/api"` block for it in
 `lib/twitter_web/router.ex` — don't nest it inside the existing `scope "/api"`
-that does `pipe_through :api`; the MCP endpoint must not go through the JSON
-API pipeline. No special pipeline is needed at all, content negotiation is
-handled inside `AshAi.Mcp.Router`:
+that does `pipe_through :api`; the MCP endpoint must not go through the JSON API
+pipeline. No special pipeline is needed at all, content negotiation is handled
+inside `AshAi.Mcp.Router`:
 
 ```elixir
 scope "/api" do
@@ -182,11 +182,11 @@ explicitly list in the `tools:` option. This gives you precise control over what
 external AI assistants can access.
 
 This training route is intentionally unauthenticated for local use. Before
-deploying it, require authentication supported by your MCP clients (OAuth 2.1
-or an API key), authorize the resulting actor, and add rate limiting. Limiting
-the tool list is not an authentication mechanism. In Lab 15 we'll do exactly
-that: secure this endpoint with OAuth 2.1 so every tool call runs with a
-signed-in user as the actor.
+deploying it, require authentication supported by your MCP clients (OAuth 2.1 or
+an API key), authorize the resulting actor, and add rate limiting. Limiting the
+tool list is not an authentication mechanism. In Lab 15 we'll do exactly that:
+secure this endpoint with OAuth 2.1 so every tool call runs with a signed-in
+user as the actor.
 
 ### 6. Test the Production MCP Server
 
@@ -199,8 +199,8 @@ mix phx.server
 You can test the MCP server by connecting to it from an MCP client. The server
 exposes the `read_feed` tool which retrieves the feed of tweets.
 
-You can also smoke-test it with curl. First initialize a session — note that
-the `accept` header must offer both content types:
+You can also smoke-test it with curl. First initialize a session — note that the
+`accept` header must offer both content types:
 
 ```bash
 curl -isS http://localhost:4000/api/mcp \
@@ -220,8 +220,8 @@ curl -sS http://localhost:4000/api/mcp \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
 ```
 
-You should see exactly one tool: `read_feed`. The same two commands work
-against the development server if you swap the URL for
+You should see exactly one tool: `read_feed`. The same two commands work against
+the development server if you swap the URL for
 `http://localhost:4000/ash_ai/mcp`.
 
 ## Two tools instead of many — ash_lua
@@ -239,9 +239,9 @@ model has to do itself.
 
 The model composes the whole task (query + filter + arithmetic) as one Lua
 script and gets back the final value in a single round-trip. And crucially, the
-calling actor, tenant, and context are passed straight through to every Ash
-call the script performs — there is no way for a script to escalate, switch
-tenants, or call actions outside the scoped set. All your policies still apply.
+calling actor, tenant, and context are passed straight through to every Ash call
+the script performs — there is no way for a script to escalate, switch tenants,
+or call actions outside the scoped set. All your policies still apply.
 
 ### 7. Install ash_lua
 
@@ -285,15 +285,15 @@ defmodule Twitter.Tweets.Tweet do
     extensions: [AshGraphql.Resource, AshJsonApi.Resource, AshLua.Resource]
 ```
 
-By default the domain is exposed under a Lua table named after the module's
-last segment, and each resource under a similarly derived key — so the `:feed`
-action becomes callable as `tweets.tweet.feed(...)` from Lua.
+By default the domain is exposed under a Lua table named after the module's last
+segment, and each resource under a similarly derived key — so the `:feed` action
+becomes callable as `tweets.tweet.feed(...)` from Lua.
 
 ### 9. Create the Agent Surface
 
-Now create a dedicated resource that defines *which* actions scripts may call.
-The `AshLua.EvalActions` extension synthesizes the two generic actions
-(`:docs` and `:eval`) on it.
+Now create a dedicated resource that defines _which_ actions scripts may call.
+The `AshLua.EvalActions` extension synthesizes the two generic actions (`:docs`
+and `:eval`) on it.
 
 Create `lib/twitter/agents/mcp_actions.ex`:
 
@@ -311,18 +311,18 @@ defmodule Twitter.Agents.McpActions do
 end
 ```
 
-(Once you've built the `:semantic_search` action in Lab 13, come back and add
-it to the `Tweet` list — scripts will be able to search semantically too.)
+(Once you've built the `:semantic_search` action in Lab 13, come back and add it
+to the `Tweet` list — scripts will be able to search semantically too.)
 
 The `eval_actions` block is the source of truth: scripts can only call the
-listed `(resource, action)` pairs — everything else doesn't exist as far as
-the LLM is concerned. This is the natural place to apply least privilege; you
-can also run multiple agent resources side by side, each with its own scope.
+listed `(resource, action)` pairs — everything else doesn't exist as far as the
+LLM is concerned. This is the natural place to apply least privilege; you can
+also run multiple agent resources side by side, each with its own scope.
 
 ### 10. Register the Two Tools
 
-Create the `Twitter.Agents` domain in `lib/twitter/agents.ex` and register
-both synthesized actions as ordinary ash_ai tools:
+Create the `Twitter.Agents` domain in `lib/twitter/agents.ex` and register both
+synthesized actions as ordinary ash_ai tools:
 
 ```elixir
 defmodule Twitter.Agents do
@@ -389,8 +389,8 @@ LLM → ash_lua_eval({ script = """
 ```
 
 (The `tool({ ... })` calls above are shorthand for readability. On the wire,
-every tool generated by ash_ai nests its arguments under a required `input`
-key in the `inputSchema`, so the actual JSON-RPC request looks like this:
+every tool generated by ash_ai nests its arguments under a required `input` key
+in the `inputSchema`, so the actual JSON-RPC request looks like this:
 
 ```json
 {
@@ -430,8 +430,8 @@ flowed through the session's actor and your policies.
 
 2. **Ask a compositional question** through an MCP client connected to
    `/api/mcp` — e.g. "which of the last 10 tweets has the most likes?" — and
-   watch whether the model reaches for the per-action tools or composes a
-   single `ash_lua_eval` script
+   watch whether the model reaches for the per-action tools or composes a single
+   `ash_lua_eval` script
 
 3. **Tighten the surface**: create a second `AshLua.EvalActions` resource that
    only exposes read actions, register it under different tool names
