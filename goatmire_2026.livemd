@@ -1,0 +1,3194 @@
+<!-- livebook:{"file_entries":[{"name":"alembic-symbol.svg","type":"attachment"},{"name":"coffee.svg","type":"attachment"},{"name":"qr-alembic-com-au.svg","type":"attachment"},{"name":"tweet-policy-flowchart.svg","type":"attachment"},{"name":"tweets-mermaid-class-diagram.svg","type":"attachment"}]} -->
+
+# Ash Demystified · Goatmire Elixir 2026
+
+```elixir
+Mix.install([
+  {:ash, "~> 3.33"},
+  {:simple_sat, "~> 0.1"}
+], consolidate_protocols: false, config: [
+  ash: [default_string_length_count: :codepoints, validate_domain_config_inclusion?: false],
+  logger: [level: :info]
+])
+
+Logger.configure(level: :info)
+
+defmodule Notebook do
+  @doc "Unloads modules, and their Inspect implementations, so a later cell can redefine them."
+  def unload(modules) do
+    for module <- List.wrap(modules), module <- [module, Module.concat(Inspect, module)] do
+      with path when is_list(path) <- :code.where_is_file(~c"#{module}.beam"), do: File.rm!(path)
+      :code.purge(module)
+      :code.delete(module)
+    end
+
+    :ok
+  end
+end
+```
+
+## Welcome
+
+<img src="files/alembic-symbol.svg" alt="alembic" width="80" />
+
+Supercharge your Elixir apps with Ash.
+
+* **event** Goatmire Elixir 2026
+* **where** Varberg, Sweden
+* **when** 2026-09-28 13:00
+* **by** Alembic
+
+This notebook is the Livebook version of the workshop deck. Each slide's prose is a markdown section. Each Elixir example is a cell you can run top to bottom.
+
+The deck's examples use AshPostgres. This notebook swaps every resource to `Ash.DataLayer.Ets`, so no database is needed. Examples that need Postgres, Phoenix, an LLM provider, or a Mix project stay as read-only code blocks.
+
+### Schedule
+
+| Time  | Session                                             | Length |
+| ----- | --------------------------------------------------- | ------ |
+| 13:00 | Resources, actions, relationships                   | 30 min |
+| 13:30 | Hands-on · labs 0 to 3                             | 30 min |
+| 14:00 | Calculations, aggregates, policies, code interfaces | 30 min |
+| 14:30 | Hands-on · labs 4 to 7                             | 30 min |
+| 15:00 | Tea and coffee break                                | 15 min |
+| 15:15 | Ash ecosystem                                       | 30 min |
+| 15:45 | Choose your own adventure                           | 60 min |
+| 16:45 | Q&A · finish!                                      | 15 min |
+
+## 01 · What is Ash?
+
+> Ash is an opinionated, declarative application framework that brings the batteries-included experience to Elixir.
+
+At its heart, Ash models your application's domain as **Resources** and their **Actions**.
+
+Model your application's **behavior** first, as data, and derive everything else automatically.
+
+Not a replacement for Phoenix. Ash is the application layer underneath it.
+
+### Actions, not CRUD
+
+* Ash is not a web framework, like Phoenix or Rails. It is a framework for your **application layer**.
+* **Actions** are the things you can do in your domain, like `:publish_post` or `:approve_order`.
+* Actions are **introspectable** and **fully typed**, so extensions can build on them.
+
+> Through its declarative extensibility, Ash delivers more than you'd expect: powerful APIs with filtering/sorting/pagination/calculations/aggregations, pub/sub, authorization, rich introspection, GraphQL... It's what empowers this solo developer to build an ambitious ERP!
+> 
+> — Frank Dugan III, System Specialist, SunnyCor Inc.
+
+### Prep: get the app running
+
+The labs run in a separate Phoenix app:
+
+```bash
+git clone https://github.com/team-alembic/ash_training
+cd ash_training
+git switch lab-01-basic-actions-and-attributes
+mise install    # or: asdf install
+mise run db-up  # Postgres + pgvector in Docker
+mix setup
+iex -S mix
+```
+
+No Docker? See the README for a local Postgres.
+
+[team-alembic/ash_training](https://github.com/team-alembic/ash_training)
+
+## 02 · Resources
+
+### What is a Resource?
+
+* the primary concept in Ash
+* usually a **domain object** in your system
+  * but doesn't have to be
+* a **noun** or **entity** in your domain model (eg **User**, **Order**, **Product**)
+* "Model your domain (with Resources), and derive the rest"
+
+### Resources define the following
+
+* **actions** the verbs or commands for your Resources
+* **attributes** the data fields (with validations)
+* **relationships** the relationships between Resources
+* **data_layer** how Ash will persist data (by default it doesn't)
+
+Resources define much, much more that we'll cover later.
+
+### Resource example
+
+A minimal `Profile` resource with a `UUID` primary key, a `string` attribute `name`, and `create` and `read` actions.
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+defmodule Account.Profile do
+  use Ash.Resource, domain: Account
+
+  actions do
+    read :read
+
+    create :create do
+      accept [:name]
+    end
+  end
+
+  attributes do
+    uuid_primary_key :id
+    attribute :name, :string
+  end
+end
+```
+
+### Domain
+
+Domains are **groupings of related resources** with shared configuration.
+
+You can think of them like a **Phoenix Context**, a **DDD Bounded Context** or a **Service**.
+
+### Domain example
+
+Resources must also be defined in a Domain.
+
+This cell defines the `Profile` resource from the previous slide and the `Account` domain together. A resource compiled before its domain exists gets a verifier warning.
+
+```elixir
+defmodule Account.Profile do
+  use Ash.Resource, domain: Account
+
+  actions do
+    read :read
+
+    create :create do
+      accept [:name]
+    end
+  end
+
+  attributes do
+    uuid_primary_key :id
+    attribute :name, :string
+  end
+end
+
+defmodule Account do
+  use Ash.Domain
+
+  resources do
+    resource Account.Profile
+  end
+end
+```
+
+With no data layer, `create` builds and returns the record but nothing is stored:
+
+```elixir
+Account.Profile
+|> Ash.Changeset.for_create(:create, %{name: "Not stored"})
+|> Ash.create!()
+```
+
+### Actions are the foundation of a Resource
+
+* Ash Resources model both data and operations (data access and transformation)
+* This a fundamental difference between Ash and Ecto
+* All access to a Resource's data is done via an Action
+  * This allows Ash to consistently apply rules like validation, authorisation, etc
+  * Ash also knows who is calling each action (the actor), which policies build on later
+
+**Remember**: A Resource without Actions is useless!
+
+### Mandatory Attributes
+
+By default `name` is optional. How can we enforce it?
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+attribute :name, :string do
+  allow_nil? false
+end
+```
+
+### Keyword List vs Block syntax
+
+Block syntax is usually preferred:
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+attribute :name, :string do
+  allow_nil? false
+end
+```
+
+It can also be written inline using keyword list syntax:
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+attribute :name, :string, allow_nil?: false
+```
+
+Both compile to the same attribute entity.
+
+### Constraining Attribute values
+
+We want to add an attribute called `status` to our profile.
+
+* type `:atom`
+* can only be the values `:published` or `:unpublished`
+* defaults to `:unpublished`
+* cannot be `nil`
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+attribute :status, :atom do
+  allow_nil? false
+  constraints one_of: [:unpublished, :published]
+  default :unpublished
+end
+```
+
+### Timestamps
+
+Ash provides these to keep track of when the Resource was first created, and when it was last updated:
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+timestamps()
+```
+
+Generates `inserted_at` and `updated_at`. For different names (our Profile uses `created_at`), write it long-hand:
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+create_timestamp :created_at
+update_timestamp :updated_at
+```
+
+* [create_timestamp](https://hexdocs.pm/ash/dsl-ash-resource.html#attributes-create_timestamp)
+* [update_timestamp](https://hexdocs.pm/ash/dsl-ash-resource.html#attributes-update_timestamp)
+
+### Data Layers
+
+By default Ash does not persist any data.
+
+An Ash Data Layer specifies where your Resource's data will be stored.
+
+* AshPostgres
+* AshSqlite
+* AshCsv
+* Ets
+* Mnesia
+
+More to come! You should generally default to `AshPostgres`.
+
+### Specifying a Data Layer
+
+The slide uses AshPostgres:
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+defmodule Account.Profile do
+  use Ash.Resource,
+    domain: Account,
+    data_layer: AshPostgres.DataLayer
+
+  postgres do
+    table "profiles"
+    repo Account.Repo
+  end
+
+  ...
+end
+```
+
+Livebook refuses to define a module that is already loaded, even from another cell. Livebook also writes each module's `.beam` file to a directory on the code path, so a deleted module would load again from disk. Cells that redefine a module start with `Notebook.unload/1`, defined in the setup cell. It deletes that `.beam` file and unloads the old module, together with the `Inspect` implementation Ash generates for each resource.
+
+Adapted for this notebook: `Ash.DataLayer.Ets` keeps records in memory, with no `postgres` block and no repo.
+
+```elixir
+Notebook.unload(Account.Profile)
+
+defmodule Account.Profile do
+  use Ash.Resource,
+    domain: Account,
+    data_layer: Ash.DataLayer.Ets
+
+  actions do
+    read :read
+
+    create :create do
+      accept [:name]
+    end
+  end
+
+  attributes do
+    uuid_primary_key :id
+    attribute :name, :string
+  end
+end
+```
+
+### Ash Generators
+
+Composable, source patching generators powered by **Igniter**. These run in a Mix project, not in Livebook.
+
+```bash
+mix ash.gen.resource             # Generate and configure an Ash.Resource.
+mix ash.gen.domain               # Generates an Ash.Domain
+mix ash.gen.change               # Generates a custom change module.
+mix ash.gen.custom_expression    # Generates a custom expression module.
+mix ash.gen.enum                 # Generates an Ash.Type.Enum
+mix ash.gen.preparation          # Generates a custom preparation module.
+mix ash.gen.validation           # Generates a custom validation module.
+mix ash.extend                   # Adds an extension to a resource (e.g. postgres)
+mix ash.set.domains              # Scans the app and updates `ash_domains` config
+```
+
+More info at https://github.com/ash-project/igniter
+
+```
+❯ mix ash.gen.resource Twitter.Tweets.Tweet
+
+Igniter:
+Update: lib/twitter/tweets.ex
+
+     ...|
+12 12   |
+13 13   |  resources do
+   14 + |    resource Twitter.Tweets.Tweet
+14 15   |  end
+15 16   |end
+     ...|
+
+
+Create: lib/twitter/tweets/tweet.ex
+
+1 | defmodule Twitter.Tweets.Tweet do
+2 |   use Ash.Resource,
+3 |     otp_app: :twitter,
+4 |     domain: Twitter.Tweets
+5 | end
+6 |
+
+Proceed with changes? [Yn] y
+```
+
+## 03 · Actions
+
+### What is an Action?
+
+* An operation or command that can be performed on a Resource
+* 5 main types **Create, Read, Update, Destroy** or **Generic**
+* **Can and should be named using Domain language where possible**
+* Actions can also be defined on the Domain using Code Interfaces
+* Public by default — `public? false` keeps an action out of API extensions (GraphQL, JSON:API, ...)
+
+### Use Domain Language (Not just CRUD)
+
+Actions should be named using **Domain language** where possible. For example:
+
+* `publish` an `Article` resource making it publicly visible
+* `like` or `unlike` a `Tweet` by updating the `User`/`Tweet` relationship
+* `archive` an `Article` by soft-deleting it
+
+These are really `update` action types.
+
+### Default Actions Example
+
+**Action**s are defined on a **Resource** in an `actions` block. If you just need CRUD actions, the defaults are all you need:
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+actions do
+  defaults [
+    :read,
+    :destroy,
+    create: [:name],
+    update: [:name]
+  ]
+end
+```
+
+### Accepted Attributes
+
+Create and Update **Action**s must explicitly `accept` attributes they will set.
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+actions do
+  create :create do
+    accept [:name]
+  end
+end
+```
+
+### Profile Resource
+
+The slide's resource has only `read` and `create`. The later slides in this module call a default `update`, a `destroy` and a generic `say_hello` action, so this cell adds them to the same module. It also uses `Ash.DataLayer.Ets` so the reads below have data. The slide writes `read :read`, which is not the primary read action, so `Ash.read!(Account.Profile)` below would fail with "No primary action of type :read". This cell adds `primary? true`.
+
+```elixir
+Notebook.unload(Account.Profile)
+
+defmodule Account.Profile do
+  use Ash.Resource,
+    domain: Account,
+    data_layer: Ash.DataLayer.Ets
+
+  actions do
+    defaults [:destroy, update: [:name]]
+
+    read :read do
+      primary? true
+    end
+
+    create :create do
+      accept [:name]
+    end
+
+    action :say_hello, :string do
+      argument :name, :string, allow_nil?: false
+
+      run fn input, _ ->
+        {:ok, "Hello: #{input.arguments.name}"}
+      end
+    end
+  end
+
+  attributes do
+    uuid_primary_key :id
+    attribute :name, :string, allow_nil?: false
+
+    attribute :status, :atom do
+      allow_nil? false
+      constraints one_of: [:unpublished, :published]
+      default :unpublished
+    end
+
+    create_timestamp :created_at
+    update_timestamp :updated_at
+  end
+end
+```
+
+### Calling `create` Actions
+
+To call a create Action, we use `Ash.Changeset.for_create/3` to create a changeset. Then we call `Ash.create!()`.
+
+```elixir
+profile =
+  Account.Profile
+  |> Ash.Changeset.for_create(:create, %{name: "My Name"})
+  |> Ash.create!()
+```
+
+**Note**: There are nicer ways to call actions, that we'll get to later on.
+
+### Action Errors
+
+Now if we create a Profile with no name we should see an error. The slide calls `Ash.create!/1`, which raises:
+
+```
+** (Ash.Error.Invalid) Invalid Error
+* attribute name is required
+```
+
+This cell calls `Ash.create/1` so the notebook keeps running and the error shows as the result:
+
+```elixir
+Account.Profile
+|> Ash.Changeset.for_create(:create, %{})
+|> Ash.create()
+```
+
+### Read All Profiles
+
+Seed a few more profiles, then read them all:
+
+```elixir
+for name <- ["Joe Armstrong", "José Valim", "Mike Williams"] do
+  Account.Profile
+  |> Ash.Changeset.for_create(:create, %{name: name})
+  |> Ash.create!()
+end
+
+Account.Profile
+|> Ash.read!()
+```
+
+### Filtered Reads
+
+Fetching the "Joe Armstrong" Profile requires a filter:
+
+```elixir
+require Ash.Query
+
+Account.Profile
+|> Ash.Query.filter(name == "Joe Armstrong")
+|> Ash.read!()
+```
+
+### Sorting and Limits
+
+What if we want to get the latest Profile? We set our `created_at` timestamp, so now we can sort on it.
+
+```elixir
+Account.Profile
+|> Ash.Query.sort(created_at: :desc)
+|> Ash.Query.limit(1)
+|> Ash.read_one!()
+```
+
+### Calling `update` Actions
+
+With the default `update` action accepting `:name`, build a changeset from an existing record:
+
+```elixir
+profile =
+  profile
+  |> Ash.Changeset.for_update(:update, %{name: "Robert Virding"})
+  |> Ash.update!()
+```
+
+### Calling `destroy` Actions
+
+Destroying works the same way:
+
+```elixir
+profile
+|> Ash.Changeset.for_destroy(:destroy)
+|> Ash.destroy!()
+```
+
+### Generic Actions
+
+Generic actions accept input arguments, execute custom logic, and return a value.
+
+Minimal structural constraints, useful for arbitrary business logic. A generic action is structured using `Ash.ActionInput` to manage inputs and `Ash.run_action` for execution. The `Account.Profile` cell above already defines this one:
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+action :say_hello, :string do
+  argument :name, :string, allow_nil?: false
+
+  run fn input, _ ->
+    {:ok, "Hello: #{input.arguments.name}"}
+  end
+end
+```
+
+### Running Generic Actions
+
+Build an `Ash.ActionInput`, then run it:
+
+```elixir
+Account.Profile
+|> Ash.ActionInput.for_action(:say_hello, %{name: "Joe"})
+|> Ash.run_action!()
+```
+
+### Builtin Validations
+
+Actions can validate their input with `validate` and a rich set of builtins. Limiting tweet length:
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+create :create do
+  accept [:text]
+  validate present(:text)
+  validate byte_size(:text, max: 280)
+end
+```
+
+Many more builtins: `string_length`, `attribute_in`, `compare`, ...
+
+### The `actor`
+
+The `actor` is whoever performs an action. It is not a BEAM process. For now, think of it as the current user. We come back to it in Policies.
+
+The hooks on a query/changeset/input may need to know the actor, so set it when you build them:
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+Post
+|> Ash.Query.for_read(:read, actor: current_user)
+|> Ash.read!()
+```
+
+## 04 · Relationships
+
+Relationships describe the connections between resources, they enable:
+
+* Loading related data
+* Filtering on related data
+* Managing related records through changes on a single resource
+* Authorizing based on the state of related data
+
+### Relationship Basics
+
+A Relationship exists between a source resource and a destination resource. They are defined in the `relationships` block of the source resource.
+
+The slide's `Content.Post` has no domain, data layer or actions. This cell adds all three, plus a `published` attribute that the aggregates and policies sections use.
+
+```elixir
+defmodule Content.Post do
+  use Ash.Resource,
+    domain: Content,
+    data_layer: Ash.DataLayer.Ets
+
+  actions do
+    defaults [:read, :destroy, create: [:title, :published, :author_id]]
+  end
+
+  attributes do
+    uuid_primary_key :id
+    attribute :title, :string, public?: true
+    attribute :published, :boolean, default: false, public?: true
+  end
+
+  relationships do
+    belongs_to :author, Account.Profile, public?: true
+  end
+end
+
+defmodule Content do
+  use Ash.Domain
+
+  resources do
+    resource Content.Post
+  end
+end
+```
+
+```elixir
+joe =
+  Account.Profile
+  |> Ash.Query.filter(name == "Joe Armstrong")
+  |> Ash.read_one!()
+
+for {title, published} <- [{"Erlang", true}, {"Making reliable systems", true}, {"Draft", false}] do
+  Content.Post
+  |> Ash.Changeset.for_create(:create, %{title: title, published: published, author_id: joe.id})
+  |> Ash.create!()
+end
+
+Content.Post
+|> Ash.Query.load(:author)
+|> Ash.Query.limit(1)
+|> Ash.read_one!()
+```
+
+### Kinds of Relationships
+
+There are 4 kinds of relationships:
+
+* `belongs_to`
+* `has_one`
+* `has_many`
+* `many_to_many`
+
+### Belongs To
+
+`belongs_to` links a `source_attribute` to a `destination_attribute` on another Resource.
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+# on Content.Post
+belongs_to :author, Account.Profile
+```
+
+The source attribute on `Content.Post` is `:author_id` and the destination attribute on `Account.Profile` is `:id`.
+
+### Has One
+
+`has_one` is similar to a `belongs_to` except the reference attribute is on the destination resource, instead of the source.
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+# on Account.Profile
+has_one :avatar, Account.Avatar
+```
+
+The source attribute on `Account.Profile` is `:id` and the destination attribute on `Account.Avatar` is `:profile_id`. This expects that `profile_id` is unique on Avatar.
+
+### Has Many
+
+`has_many` relationship is similar to a `has_one` except that the destination attribute is not unique, and will produce a list of related items.
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+# on Account.Profile
+has_many :posts, Content.Post
+```
+
+The `source_attribute` on `Account.Profile` is `:id`. The `destination_attribute` defaults to `:profile_id`, derived from the source resource's name. Our `Content.Post` stores the key in `:author_id` (from `belongs_to :author`), so the `Account.Profile` cells below write `has_many :posts, Content.Post, destination_attribute: :author_id`.
+
+`has_many` also accepts `sort` and `limit`, e.g. "the 3 most recent posts".
+
+### Many To Many
+
+A `many_to_many` relationship can be used to relate many source resources to many destination resources.
+
+To achieve this, the `source_attribute` and `destination_attribute` are defined on a **join resource**.
+
+A `many_to_many` relationship can be thought of as a combination of a `has_many` relationship on the source/destination resources and a `belongs_to` relationship on the join resource.
+
+### Through Relationships
+
+Relationships can traverse *other* relationships, using a **path of relationship names**:
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+# on Twitter.Tweets.Tweet
+has_many :likers, Twitter.Accounts.User do
+  through [:likes, :user]
+end
+```
+
+Tweet `has_many :likes`, each like `belongs_to :user` — so `:likers` goes straight from a tweet to the users who liked it.
+
+No join resource or extra columns needed!
+
+### Mermaid Resource Diagrams
+
+Ash draws a class diagram of every resource and relationship in your domains.
+
+```bash
+mix ash.generate_resource_diagrams
+```
+
+![Tweets class diagram](files/tweets-mermaid-class-diagram.svg)
+
+## 05 · Advanced Actions
+
+### Custom Read Actions with `prepare`
+
+For `read` Actions, you can add custom behavior with `prepare`.
+
+Let's create a meaningful `latest` Action which sorts by the most recently created Profiles.
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+read :latest do
+  prepare build(sort: [created_at: :desc])
+end
+```
+
+Remember: **actions should be meaningful in your domain, not just CRUD**.
+
+### Builtin vs Custom `prepare`s
+
+`build` is a builtin `prepare` function (or "preparation")
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+prepare build(sort: [created_at: :desc])
+```
+
+but we can call our own code by providing a Module
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+prepare Account.Profile.Preparations.SortByMostRecentlyCreated
+```
+
+### Custom `prepare` Module
+
+To define a Preparation we `use Ash.Resource.Preparation` and define a `prepare/3` function.
+
+```elixir
+defmodule Account.Profile.Preparations.SortByMostRecentlyCreated do
+  use Ash.Resource.Preparation
+
+  @impl true
+  def prepare(query, _, _) do
+    Ash.Query.build(query, sort: [created_at: :desc])
+  end
+end
+```
+
+### Custom Actions with `change` and `validate`
+
+For `create`, `update` and `destroy` Actions, you can add custom behavior with `change` and validations with `validate`.
+
+Let's create a meaningful `publish` Action for Profile which changes the `status`.
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+update :publish do
+  # We don't want to accept any input here
+  accept []
+
+  change set_attribute(:status, :published)
+  validate string_length(:name, min: 2, max: 255)
+end
+```
+
+### Builtin vs Custom `change`
+
+`set_attribute` is a builtin `change`
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+change set_attribute(:status, :published)
+```
+
+but we can call our own code by providing a Module
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+change Account.Profile.Changes.Publish
+```
+
+### Custom `change` Module
+
+To define a change we `use Ash.Resource.Change` and define a `change/3` function.
+
+```elixir
+defmodule Account.Profile.Changes.Publish do
+  use Ash.Resource.Change
+
+  @impl true
+  def change(changeset, _, _) do
+    Ash.Changeset.force_change_attribute(changeset, :status, :published)
+  end
+end
+```
+
+### Builtin vs Custom `validate`
+
+`string_length` is a builtin validation
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+validate string_length(:name, min: 2, max: 255)
+```
+
+but we can call our own code by providing a Module
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+validate Account.Profile.Validations.CheckNameLength
+```
+
+### Custom `validate` Module
+
+To define a validation we `use Ash.Resource.Validation` and define a `validate/3` function.
+
+```elixir
+defmodule Account.Profile.Validations.CheckNameLength do
+  use Ash.Resource.Validation
+
+  @impl true
+  def validate(changeset, _, _) do
+    name = Ash.Changeset.get_attribute(changeset, :name)
+    length = String.length(name)
+
+    if length >= 2 and length <= 255 do
+      :ok
+    else
+      {:error, field: :name, message: "must be at least 2 characters and less than 255"}
+    end
+  end
+end
+```
+
+### Validations are simpler than changes
+
+Key difference between a validation vs change:
+
+* a validation cannot return a new changeset
+
+### What is an Identity?
+
+Identities declare that a record can be uniquely identified by some attributes.
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+identities do
+  identity <name>, <keys>
+  ...
+end
+```
+
+Similar idea but not the same as a unique constraint because Ash isn't constrained by a specific data layer.
+
+### Identity example
+
+To make the Profile name unique add this section to the Resource:
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+identities do
+  identity :profile_name, [:name] do
+    pre_check? true
+  end
+end
+```
+
+ETS has no native unique constraint enforcement, so `pre_check?` runs the uniqueness check in a before_action hook.
+
+### Upserts
+
+Ash automatically handles upserting on primary key, but you need to specify upsert behaviour for other attributes.
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+create :create_or_publish do
+  accept [:name]
+  change set_attribute(:status, :published)
+  upsert? true
+  upsert_identity :profile_name
+end
+```
+
+An upsert that hits an existing record still counts as an update. It touches update defaults like `updated_at` by default. Opt out per call with `touch_update_defaults?: false`.
+
+### Profile with everything from this module
+
+This cell redefines the whole `Account.Profile` with `latest`, `publish`, the identity and the upsert action. It also adds `latest_via_module` and `publish_via_modules`, which use the three custom modules above instead of the builtins, and the `has_many :posts` relationship from module 04.
+
+`:publish` also gets `require_atomic? false`. The `pre_check?` identity adds a `before_action` hook to every update, and on ETS the slide's `:publish` fails with "must be performed atomically, but it could not be".
+
+```elixir
+Notebook.unload(Account.Profile)
+
+defmodule Account.Profile do
+  use Ash.Resource,
+    domain: Account,
+    data_layer: Ash.DataLayer.Ets
+
+  actions do
+    defaults [:destroy, update: [:name]]
+
+    read :read do
+      primary? true
+    end
+
+    create :create do
+      primary? true
+      accept [:name]
+    end
+
+    read :latest do
+      prepare build(sort: [created_at: :desc])
+    end
+
+    read :latest_via_module do
+      prepare Account.Profile.Preparations.SortByMostRecentlyCreated
+    end
+
+    update :publish do
+      # We don't want to accept any input here
+      accept []
+      require_atomic? false
+
+      change set_attribute(:status, :published)
+      validate string_length(:name, min: 2, max: 255)
+    end
+
+    update :publish_via_modules do
+      accept []
+      require_atomic? false
+
+      change Account.Profile.Changes.Publish
+      validate Account.Profile.Validations.CheckNameLength
+    end
+
+    create :create_or_publish do
+      accept [:name]
+      change set_attribute(:status, :published)
+      upsert? true
+      upsert_identity :profile_name
+    end
+
+    action :say_hello, :string do
+      argument :name, :string, allow_nil?: false
+
+      run fn input, _ ->
+        {:ok, "Hello: #{input.arguments.name}"}
+      end
+    end
+  end
+
+  attributes do
+    uuid_primary_key :id
+    attribute :name, :string, allow_nil?: false, public?: true
+
+    attribute :status, :atom do
+      allow_nil? false
+      public? true
+      constraints one_of: [:unpublished, :published]
+      default :unpublished
+    end
+
+    create_timestamp :created_at
+    update_timestamp :updated_at
+  end
+
+  relationships do
+    has_many :posts, Content.Post, destination_attribute: :author_id
+  end
+
+  identities do
+    identity :profile_name, [:name] do
+      pre_check? true
+    end
+  end
+end
+```
+
+### Running the Actions
+
+```elixir
+Account.Profile
+|> Ash.Query.for_read(:latest)
+|> Ash.read!()
+```
+
+```elixir
+Account.Profile
+|> Ash.Query.for_read(:latest_via_module)
+|> Ash.read!()
+```
+
+The `destroy` example earlier removed the seeded `profile`, so fetch a fresh one first:
+
+```elixir
+profile = Account.Profile |> Ash.Query.filter(name == "Joe Armstrong") |> Ash.read_one!()
+
+profile
+|> Ash.Changeset.for_update(:publish)
+|> Ash.update!()
+```
+
+The custom modules do the same job:
+
+```elixir
+Account.Profile
+|> Ash.Query.filter(name == "José Valim")
+|> Ash.read_one!()
+|> Ash.Changeset.for_update(:publish_via_modules)
+|> Ash.update!()
+```
+
+### How Does Ash Handle Identities?
+
+Allows fields to be passed to `Ash.get/3`:
+
+```elixir
+Ash.get!(Account.Profile, %{name: "Joe Armstrong"})
+```
+
+AshPostgres creates unique constraints in the database automatically for each identity.
+
+A second create with the same name fails the pre-check:
+
+```elixir
+Account.Profile
+|> Ash.Changeset.for_create(:create, %{name: "Joe Armstrong"})
+|> Ash.create()
+```
+
+### Upserts are create actions
+
+Did it create or update? The returned record tells you which branch was taken:
+
+```elixir
+record =
+  Account.Profile
+  |> Ash.Changeset.for_create(:create_or_publish, %{name: "Mike Williams"})
+  |> Ash.create!()
+
+Ash.Resource.get_metadata(record, :upsert_action)
+```
+
+### Expressions with `expr`
+
+Ash expressions give you a way to define **portable calculations** and filters.
+
+This means that they are data layer independent!
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+expr(first_name <> " " <> last_name)
+
+change filter(expr(tweet_id == ^arg(:tweet_id) and user_id == ^actor(:id)))
+```
+
+This can be run in Elixir *or* within a data layer for efficient sorting and filtering. `^arg/1` and `^actor/1` pin in the action's arguments and the actor.
+
+### Hands-on · part 1
+
+```bash
+git switch lab-00-resources                     # Lab 0 · Resources
+git switch lab-01-basic-actions-and-attributes  # Lab 1 · Basic actions
+git switch lab-02-relationships                 # Lab 2 · Relationships
+git switch lab-03-advanced-actions              # Lab 3 · Advanced actions
+```
+
+Each branch has its instructions in `labs/`, e.g. `labs/0-resources.md`. Stuck? Switch to the next branch. It starts from the solved lab before it.
+
+## 06 · Calculations and Aggregates
+
+### Calculations
+
+Calculations are derived fields. They can reference attributes, calculations and aggregates.
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+defmodule Resource do
+  ...
+
+  calculations do
+    calculate <name>, <type>, expr(<expression>)
+  end
+end
+```
+
+### Split `name` in the `Person` resource
+
+The slide's `Account.Person`, with `Ash.DataLayer.Ets` added:
+
+```elixir
+Notebook.unload(Account)
+
+defmodule Account.Person do
+  use Ash.Resource,
+    domain: Account,
+    data_layer: Ash.DataLayer.Ets
+
+  actions do
+    defaults [:read]
+
+    create :create do
+      accept [:first_name, :last_name]
+    end
+  end
+
+  attributes do
+    uuid_primary_key :id
+    attribute :first_name, :string, allow_nil?: false
+    attribute :last_name, :string, allow_nil?: false
+  end
+end
+
+defmodule Account do
+  use Ash.Domain
+
+  resources do
+    resource Account.Profile
+    resource Account.Person
+  end
+end
+```
+
+### Calculate `full_name`
+
+Add the `calculations` section to the Resource. The slide shows three alternatives for the same calculation. They cannot all live in one resource under the same name:
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+calculations do
+  calculate :full_name, :string, expr(first_name <> " " <> last_name)
+
+  # or let Ash infer the type from the expression
+  calculate :full_name, :auto, expr(first_name <> " " <> last_name)
+
+  # or reference a Module
+  calculate :full_name, :string, Account.Person.Calculations.FullName
+end
+```
+
+`full_name` can now be loaded on demand or used in filters, sorts, or other calculations.
+
+`:auto` works for expression calculations only. Module calculations need an explicit type.
+
+### Module Calculations
+
+Not every calculation can be created with an expression.
+
+```elixir
+defmodule Account.Person.Calculations.FullName do
+  use Ash.Resource.Calculation
+
+  @impl true
+  def load(_, _, _), do: [:first_name, :last_name]
+
+  @impl true
+  def calculate(records, _, _) do
+    Enum.map(records, fn record ->
+      record.first_name <> " " <> record.last_name
+    end)
+  end
+end
+```
+
+This redefinition of `Account.Person` keeps the expression version as `full_name` and adds the module version as `full_name_via_module`:
+
+```elixir
+Notebook.unload(Account.Person)
+
+defmodule Account.Person do
+  use Ash.Resource,
+    domain: Account,
+    data_layer: Ash.DataLayer.Ets
+
+  actions do
+    defaults [:read]
+
+    create :create do
+      accept [:first_name, :last_name]
+    end
+  end
+
+  attributes do
+    uuid_primary_key :id
+    attribute :first_name, :string, allow_nil?: false
+    attribute :last_name, :string, allow_nil?: false
+  end
+
+  calculations do
+    calculate :full_name, :string, expr(first_name <> " " <> last_name)
+    calculate :full_name_via_module, :string, Account.Person.Calculations.FullName
+  end
+end
+```
+
+### Calculation Example (Not Loaded)
+
+```elixir
+Account.Person
+|> Ash.Changeset.for_create(:create, %{first_name: "Joe", last_name: "Armstrong"})
+|> Ash.create!()
+```
+
+`full_name` shows as `#Ash.NotLoaded<...>`. Need to `load` calculations.
+
+### Calculation Example (With Load)
+
+```elixir
+Account.Person
+|> Ash.Changeset.for_create(:create, %{first_name: "Joe", last_name: "Armstrong"})
+|> Ash.create!()
+|> Ash.load!([:full_name, :full_name_via_module])
+```
+
+Loading the `full_name` calculates the field, and concats the attributes.
+
+### Expression Examples
+
+Filter on the calculation. The two creates above make two matching people:
+
+```elixir
+Account.Person
+|> Ash.Query.filter(full_name == "Joe Armstrong")
+|> Ash.read!()
+```
+
+On AshPostgres this becomes SQL:
+
+```sql
+SELECT *
+FROM people
+WHERE (first_name || ' ' || last_name) = 'Joe Armstrong'
+```
+
+Calculate in memory from a struct that was never stored:
+
+```elixir
+person = %Account.Person{
+  first_name: "Joe",
+  last_name: "Armstrong"
+}
+
+Ash.calculate!(person, :full_name)
+```
+
+### Aggregates
+
+[Aggregates](https://hexdocs.pm/ash/aggregates.html) in Ash allow for retrieving summary information over groups of related data.
+
+Some examples:
+
+* count of published Posts for a User
+* sum of all read counts across all Posts for a User
+* total count of likes for a tweet
+
+### Aggregate Example
+
+Given a user `Profile` resource with related `Post`s:
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+aggregates do
+  count :count_of_posts, :posts do
+    filter expr(published == true)
+  end
+end
+```
+
+### Aggregate Types
+
+* `count` counts related items meeting the criteria
+* `exists` checks if any related items meet the criteria
+* `sum` sums a `field` of the related items
+* `list` lists a `field` of the related items
+
+… and more: `first`, `max`, `min`, `avg` and `custom`. See the aggregates guide.
+
+### Aggregates can reference Aggregates
+
+The `field` of an aggregate can itself be an aggregate on the related resource. `like_count` is an aggregate on `Tweet`, so on `User`:
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+sum :total_likes_received, :tweets, :like_count
+```
+
+Very little in your database is out of reach once you start stacking aggregates — and it's still a single query.
+
+### Unrelated Aggregates
+
+Unrelated aggregates (also called **resource-based aggregates**) allow you to aggregate data from any resource without requiring a predefined relationship.
+
+The slide's `Account.User` has only the `aggregates` block. This cell adds a data layer, an id and a read action so it can be queried, and adds it to the `Account` domain.
+
+```elixir
+Notebook.unload(Account)
+
+defmodule Account.User do
+  use Ash.Resource,
+    domain: Account,
+    data_layer: Ash.DataLayer.Ets
+
+  actions do
+    defaults [:read, create: [:name]]
+  end
+
+  attributes do
+    uuid_primary_key :id
+    attribute :name, :string, public?: true
+  end
+
+  aggregates do
+    count :total_profiles,
+          Account.Profile
+
+    count :duplicate_name_count,
+          Account.Profile do
+      filter expr(
+        name == parent(name) and
+        id != parent(id)
+      )
+    end
+  end
+end
+
+defmodule Account do
+  use Ash.Domain
+
+  resources do
+    resource Account.Profile
+    resource Account.Person
+    resource Account.User
+  end
+end
+```
+
+### Inline Aggregates
+
+Aggregates can be written straight into a calculation expression, with no `aggregates` entry.
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+calculations do
+  calculate :published_post_count, :integer,
+    expr(count(posts, query: [filter: expr(published == true)]))
+
+  calculate :post_stats, :map, expr(%{
+    published: count(posts, query: [filter: expr(published == true)]),
+    total: count(posts)
+  })
+end
+```
+
+Resource-based aggregates work inline too: `count(Account.Profile, filter: expr(name == parent(name)))`.
+
+### Profile with aggregates and inline aggregates
+
+The full `Account.Profile` from module 05, plus `count_of_posts` and both inline-aggregate calculations:
+
+```elixir
+Notebook.unload(Account.Profile)
+
+defmodule Account.Profile do
+  use Ash.Resource,
+    domain: Account,
+    data_layer: Ash.DataLayer.Ets
+
+  actions do
+    defaults [:destroy, update: [:name]]
+
+    read :read do
+      primary? true
+    end
+
+    create :create do
+      primary? true
+      accept [:name]
+    end
+
+    read :latest do
+      prepare build(sort: [created_at: :desc])
+    end
+
+    read :latest_via_module do
+      prepare Account.Profile.Preparations.SortByMostRecentlyCreated
+    end
+
+    update :publish do
+      accept []
+      require_atomic? false
+
+      change set_attribute(:status, :published)
+      validate string_length(:name, min: 2, max: 255)
+    end
+
+    update :publish_via_modules do
+      accept []
+      require_atomic? false
+
+      change Account.Profile.Changes.Publish
+      validate Account.Profile.Validations.CheckNameLength
+    end
+
+    create :create_or_publish do
+      accept [:name]
+      change set_attribute(:status, :published)
+      upsert? true
+      upsert_identity :profile_name
+    end
+
+    action :say_hello, :string do
+      argument :name, :string, allow_nil?: false
+
+      run fn input, _ ->
+        {:ok, "Hello: #{input.arguments.name}"}
+      end
+    end
+  end
+
+  attributes do
+    uuid_primary_key :id
+    attribute :name, :string, allow_nil?: false, public?: true
+
+    attribute :status, :atom do
+      allow_nil? false
+      public? true
+      constraints one_of: [:unpublished, :published]
+      default :unpublished
+    end
+
+    create_timestamp :created_at
+    update_timestamp :updated_at
+  end
+
+  relationships do
+    has_many :posts, Content.Post, destination_attribute: :author_id
+  end
+
+  identities do
+    identity :profile_name, [:name] do
+      pre_check? true
+    end
+  end
+
+  aggregates do
+    count :count_of_posts, :posts do
+      filter expr(published == true)
+    end
+  end
+
+  calculations do
+    calculate :published_post_count,
+              :integer,
+              expr(count(posts, query: [filter: expr(published == true)]))
+
+    calculate :post_stats,
+              :map,
+              expr(%{
+                published: count(posts, query: [filter: expr(published == true)]),
+                total: count(posts)
+              })
+  end
+end
+```
+
+```elixir
+Account.Profile
+|> Ash.Query.filter(name == "Joe Armstrong")
+|> Ash.Query.load([:count_of_posts, :published_post_count, :post_stats])
+|> Ash.read_one!()
+|> Map.take([:name, :count_of_posts, :published_post_count, :post_stats])
+```
+
+Ash 3.33.11 on ETS has a bug here. Loading both unrelated aggregates in one `Ash.load!/2` call applies the `duplicate_name_count` filter to `total_profiles` as well. This cell loads them one at a time.
+
+```elixir
+Account.User
+|> Ash.Changeset.for_create(:create, %{name: "Joe Armstrong"})
+|> Ash.create!()
+|> Ash.load!(:total_profiles)
+|> Ash.load!(:duplicate_name_count)
+|> Map.take([:name, :total_profiles, :duplicate_name_count])
+```
+
+## 07 · Policies
+
+### Authorization
+
+Authorization in Ash involves three things:
+
+* `actor` - the entity (i.e User, Org, Device) performing an action, as seen in Actions
+* `authorize?` - a flag that tells Ash to run authorization.
+* `authorizers` - the extensions on a resource that can modify or forbid the action.
+
+### Setting `actor` and `authorize?`
+
+All functions in Ash that may perform authorization and/or wish to use the actor accept an `actor` and an `authorize?` option.
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+Ash.Changeset.for_create(
+  Post,
+  :create,
+  %{title: "Post Title"},
+  actor: current_user
+)
+```
+
+Authorization runs by default, so there is no need to pass `authorize?: true`.
+
+### `authorize?: false`
+
+Skipping authorization is fine in tests and seeds. In application code it is an anti-pattern. Use a system actor instead, so the call stays traceable, for example in AshPaperTrail's version history.
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+# tests and seeds
+Ash.read!(Post, authorize?: false)
+
+# application code
+Ash.read!(Post, actor: %MyApp.SystemActor{name: :nightly_digest})
+```
+
+### Authorizers
+
+Authorizers are in control of what happens during authorization.
+
+Generally, you won't need to create your own authorizer, as the builtin policy authorizer `Ash.Policy.Authorizer` works well for any use case.
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+use Ash.Resource, authorizers: [Ash.Policy.Authorizer]
+```
+
+If you don't add at least one Authorizer, your Resource allows any actor to call any action.
+
+A `policies` block without `Ash.Policy.Authorizer` in `authorizers:` fails to compile.
+
+Then you can start defining policies for your resource.
+
+### Policies
+
+Policies determine what actions on a resource are permitted for a given actor.
+
+They can also filter the results of read actions to restrict the results to only records that should be visible.
+
+### Policy Example
+
+All policies that apply must pass and at least one policy must apply or it's forbidden. `IsSuperUser`, `Deactivated`, `IsAdminUser` and `HasCreatorRole` stand for custom check modules.
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+policies do
+  policy always() do
+    authorize_if always()
+  end
+
+  policy action_type(:create) do
+    authorize_if IsSuperUser
+    forbid_if Deactivated
+    authorize_if IsAdminUser
+    authorize_if HasCreatorRole
+  end
+end
+```
+
+### Anatomy of a Policy
+
+Each Policy defined in a resource has two parts:
+
+1. a condition, or a list of conditions such as `action_type(:read)` or `always()`. If the condition(s) are true for an attempted action, then the policy will be applied to the action.
+2. a set of **Checks**, each of which will be evaluated individually if a Policy applies to the attempted action.
+
+### How a Policy is processed
+
+If more than one policy applies to any given attempted action (eg. an admin actor calls a read action) then **all applicable policies must pass** for the action to be performed.
+
+A Policy will evaluate to either:
+
+* `:forbidden`
+* `:authorized`
+
+### Policy checks
+
+If no check produces a result then the Policy result is `:forbidden`.
+
+* `authorize_if`
+  * if `true` the whole policy is `:authorized`
+  * else move to next check
+* `authorize_unless`
+  * if `false` the whole policy is `:authorized`
+  * else move to next check
+* `forbid_if`
+  * if `true` the whole policy is `:forbidden`
+  * else move to next check
+* `forbid_unless`
+  * if `false` the whole policy is `:forbidden`
+  * else move to next check
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+policies do
+  policy action_type(:create) do
+    authorize_if IsSuperUser
+    forbid_if Deactivated
+    authorize_if IsAdminUser
+    authorize_if HasCreatorRole
+  end
+end
+```
+
+We check those from top to bottom, so the first one of those that returns `:authorized` or `:forbidden` determines the entire outcome.
+
+### Custom Error Messages
+
+Policies can carry an `error_message`, used when that policy is the one responsible for the `Forbidden` error.
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+policy action([:update, :destroy]) do
+  error_message "only the author can edit or delete a tweet"
+  authorize_if expr(user_id == ^actor(:id))
+end
+```
+
+Much friendlier than the default!
+
+### Bypass Policies
+
+A bypass Policy is just like a regular policy, except if a bypass passes, then other policies after it *do not need to pass*.
+
+This can be useful for writing complex access rules, or for a simple rule like "an admin can do anything" without needing to specify it as part of every other policy.
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+policies do
+  bypass IsSuperUser do
+    authorize_if always()
+  end
+end
+```
+
+### Policy Breakdown Example
+
+```
+Policy Breakdown
+  Admins and managers can create posts | ⛔:
+    authorize if: actor.admin == true | ✘ | ⬇
+    authorize if: actor.manager == true | ✘ | ⬇
+```
+
+### Filter Policies
+
+On a read action, a policy check that can be expressed as a filter narrows the results instead of forbidding the whole read.
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+policy action_type(:read) do
+  authorize_if expr(published == true)
+  authorize_if expr(author_id == ^actor(:id))
+end
+```
+
+The actor gets back published posts and their own drafts. Other records are filtered out with no `Forbidden` error.
+
+Set `access_type :strict` on a policy to forbid instead of filter.
+
+### Policies on `Content.Post`
+
+This cell redefines `Content.Post` with `Ash.Policy.Authorizer`. It combines the filter policy above, the error-message policy (with `author_id` in place of the tweet's `user_id`). The field policy slide stays read-only below. Records that non-authors can read are always published, so a field policy on this resource would never hide anything.
+
+```elixir
+Notebook.unload(Content.Post)
+
+defmodule Content.Post do
+  use Ash.Resource,
+    domain: Content,
+    data_layer: Ash.DataLayer.Ets,
+    authorizers: [Ash.Policy.Authorizer]
+
+  actions do
+    defaults [:read, :destroy, create: [:title, :published, :author_id]]
+  end
+
+  attributes do
+    uuid_primary_key :id
+    attribute :title, :string, public?: true
+    attribute :published, :boolean, default: false, public?: true
+  end
+
+  relationships do
+    belongs_to :author, Account.Profile, public?: true
+  end
+
+  policies do
+    policy action_type(:read) do
+      authorize_if expr(published == true)
+      authorize_if expr(author_id == ^actor(:id))
+    end
+
+    policy action_type(:create) do
+      authorize_if actor_present()
+    end
+
+    policy action([:destroy]) do
+      error_message "only the author can delete a post"
+      authorize_if expr(author_id == ^actor(:id))
+    end
+  end
+
+end
+```
+
+```elixir
+joe = Ash.get!(Account.Profile, %{name: "Joe Armstrong"})
+jose = Ash.get!(Account.Profile, %{name: "José Valim"})
+
+%{
+  joe_sees: Content.Post |> Ash.read!(actor: joe) |> Enum.map(& &1.title),
+  jose_sees: Content.Post |> Ash.read!(actor: jose) |> Enum.map(& &1.title),
+  seeds_see: Content.Post |> Ash.read!(authorize?: false) |> Enum.map(& &1.title)
+}
+```
+
+José trying to delete Joe's post gets the custom error message:
+
+```elixir
+post =
+  Content.Post
+  |> Ash.Query.filter(title == "Erlang")
+  |> Ash.read_one!(actor: joe)
+
+{:error, error} =
+  post
+  |> Ash.Changeset.for_destroy(:destroy, %{}, actor: jose)
+  |> Ash.destroy()
+
+Exception.message(error)
+```
+
+### Checking Permissions (without acting)
+
+Ask the policies a question — no action is run:
+
+```elixir
+%{
+  joe_can_destroy?: Ash.can?({post, :destroy}, joe),
+  jose_can_destroy?: Ash.can?({post, :destroy}, jose)
+}
+```
+
+The slide's batch form checks several actions for one actor:
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+Ash.can_do_all?([{tweet, :update}, {tweet, :destroy}], current_user)
+```
+
+Great for showing/hiding buttons in the UI.
+
+### Field Policies
+
+Hide a single field instead of the whole record:
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+field_policies do
+  field_policy :email do
+    authorize_if expr(id == ^actor(:id))
+  end
+
+  field_policy :* do
+    authorize_if always()
+  end
+end
+```
+
+Forbidden fields load as `%Ash.ForbiddenField{}`.
+
+### Mermaid Policy Flowcharts
+
+`mix ash.generate_policy_charts` draws a flowchart of every policy on a resource.
+
+![Tweet policy flowchart](files/tweet-policy-flowchart.svg)
+
+## 08 · Code Interfaces
+
+### Why do we need Code Interfaces?
+
+Using `Changeset`s and `Query`s directly to act on resources is a bit unwieldy.
+
+**Code Interfaces** simplify how we use our defined actions, and offer a clean and rich interface to our Domain.
+
+They can be defined on the **Domain**.
+
+### Code Interface Example
+
+In this example, we will define it on the **Domain**. The other resources stay in the domain too.
+
+Unloading the old `Account` first matters here for a second reason. Ash builds a domain's code interface functions from the domain module that is already loaded, so without the unload the new `define` would be ignored.
+
+```elixir
+Notebook.unload(Account)
+
+defmodule Account do
+  use Ash.Domain
+
+  resources do
+    resource Account.Profile do
+      define :create_profile, args: [:name], action: :create
+    end
+
+    resource Account.Person
+    resource Account.User
+  end
+end
+```
+
+### Using Code Interfaces
+
+Create a profile with 1 line. (Remember we defined it on the Account domain)
+
+```elixir
+Account.create_profile!("Robert Virding")
+```
+
+instead of 3 lines
+
+```elixir
+Account.Profile
+|> Ash.Changeset.for_create(:create, %{name: "Mike Williams II"})
+|> Ash.create!()
+```
+
+**Nice!** the bang version of the function is created as well as the normal version.
+
+The slide creates "José Valim" in both examples. `José Valim` already exists from module 03, and the `profile_name` identity rejects a duplicate, so these cells use other names.
+
+### Default Options
+
+An interface can carry its own defaults with `default_options` — call-site options are merged over them.
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+define :feed,
+  default_options: [load: [:like_count, :liked_by_me]]
+```
+
+Call sites shrink to:
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+Twitter.Tweets.feed!(actor: current_user)
+```
+
+### Predicate Interfaces
+
+A name ending in `?` generates a single function returning a **bare boolean** (raising on errors).
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+define :liked?, args: [:tweet_id]
+```
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+Twitter.Tweets.liked?(tweet_id, actor: user)  #=> true | false
+Twitter.Tweets.liked(tweet_id, actor: user)   #=> {:ok, boolean}
+```
+
+### `can_*` Helpers
+
+Every `define` also generates `can_*`/`can_*?` helpers that check your policies **without running the action**.
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+Twitter.Tweets.can_delete_tweet?(current_user, tweet)
+```
+
+The same on `Content`, with a `delete_post` interface:
+
+```elixir
+Notebook.unload(Content)
+
+defmodule Content do
+  use Ash.Domain
+
+  resources do
+    resource Content.Post do
+      define :delete_post, action: :destroy
+    end
+  end
+end
+
+%{
+  joe: Content.can_delete_post?(joe, post),
+  jose: Content.can_delete_post?(jose, post)
+}
+```
+
+Handy for hiding the delete button on posts the user can't delete.
+
+### Hands-on · part 2 · then a 15 min break
+
+```bash
+git switch lab-04-calculations     # Lab 4 · Calculations
+git switch lab-05-aggregates       # Lab 5 · Aggregates
+git switch lab-06-policies         # Lab 6 · Policies
+git switch lab-07-code-interface   # Lab 7 · Code interfaces
+```
+
+Still on labs 0 to 3? Finish those first, or switch ahead to catch up.
+
+### `sleep(900_000)`
+
+![coffee](files/coffee.svg)
+
+Break time! Back in 15 minutes.
+
+## 09 · Ecosystem Overview
+
+The Ash ecosystem consists of numerous hex packages, all of which have their own documentation.
+
+If you can't find something in this documentation, don't forget to search in any potentially relevant package.
+
+### Data Layers
+
+* [AshPostgres](https://hexdocs.pm/ash_postgres) PostgreSQL data layer
+* [AshSqlite](https://hexdocs.pm/ash_sqlite) SQLite data layer
+* [AshCsv](https://hexdocs.pm/ash_csv) CSV data layer
+* [AshCubdb](https://hexdocs.pm/ash_cubdb) CubDB data layer
+
+### Community Data Layers
+
+* [AshNeo4j](https://hexdocs.pm/ash_neo4j) Neo4j graph database
+* [AshAge](https://hexdocs.pm/ash_age) Apache AGE graph database on Postgres
+* [AshScylla](https://hexdocs.pm/ash_scylla) ScyllaDB and Apache Cassandra
+* [AshClickhouse](https://hexdocs.pm/ash_clickhouse) ClickHouse
+* [AshDynamo](https://hexdocs.pm/ash_dynamo) DynamoDB
+
+### API Extensions
+
+* [AshJsonApi](https://hexdocs.pm/ash_json_api) JSON:API builder
+* [AshGraphql](https://hexdocs.pm/ash_graphql) GraphQL builder
+
+### Web
+
+* [AshPhoenix](https://hexdocs.pm/ash_phoenix) Phoenix integrations
+* [AshAuthentication](https://hexdocs.pm/ash_authentication) Authenticate users with password, OAuth, and more
+* [AshAuthenticationPhoenix](https://hexdocs.pm/ash_authentication_phoenix) Integrations for AshAuthentication and Phoenix
+
+### Finance
+
+* [AshMoney](https://hexdocs.pm/ash_money) A money data type for Ash
+* [AshDoubleEntry](https://hexdocs.pm/ash_double_entry) A double entry system backed by Ash Resources
+
+### Resource Utilities
+
+* [AshOban](https://hexdocs.pm/ash_oban) Background jobs and scheduled jobs for Ash, backed by Oban
+* [AshArchival](https://hexdocs.pm/ash_archival) Archive resources instead of deleting them
+* [AshStateMachine](https://hexdocs.pm/ash_state_machine) Create state machines for resources
+* [AshPaperTrail](https://hexdocs.pm/ash_paper_trail) Keep a history of changes to resources
+* [AshCloak](https://hexdocs.pm/ash_cloak) Automatically encrypt (and decrypt) resource attributes
+
+### Admin & Monitoring
+
+* [AshAdmin](https://hexdocs.pm/ash_admin) A push-button admin interface
+* [AshAppsignal](https://hexdocs.pm/ash_appsignal) Monitor your Ash resources with AppSignal
+* [OpenTelemetryAsh](https://hexdocs.pm/opentelemetry_ash) Open Telemetry for Ash resources
+
+### AI & LLM Integration
+
+* [AshAi](https://hexdocs.pm/ash_ai) Comprehensive LLM toolbox with chat, tool calling, vectorization, MCP servers, and prompt-backed actions
+* [AshLua](https://hexdocs.pm/ash_lua) Lua scripting surface for Ash — pairs with AshAi for agent tooling
+
+### Dispelling Myths and Misconceptions!
+
+* Ash works with Phoenix, it's not a replacement
+* Ash does more than CRUD
+* The investment is definitely worth it, but hard to tell on toy apps
+* Ash doesn't lock you in, escape hatches everywhere
+* Ash is not just about creating APIs
+* Ash has various test helpers, but you can test apps the way you normally do
+
+### Choose your own adventure
+
+* **forms** Forms and LiveView with AshPhoenix (the default)
+* **apis** JSON:API and GraphQL
+* **ai** AshAi and MCP servers
+* **extensions** Write your own Ash extension
+
+Sit in groups by track. The rest of the notebook is bonus reading.
+
+## 10 · AshAi
+
+Every example in this module needs Phoenix, Postgres with pgvector, Oban or an LLM API key. They stay as read-only code blocks. Labs 11 to 15 in the ash_training repo run them for real.
+
+### What is AshAi?
+
+Ash Framework extension for AI/LLM integration.
+
+* Declarative DSL approach
+* Chat generation with tool calling
+* Vectorization for semantic search
+* MCP servers for IDE integration
+* Prompt-backed actions
+
+### Key Benefits
+
+* Define AI tools using familiar Ash patterns
+* Authorization policies automatically apply to AI tool calls
+* Automatic vectorization of resources
+* Expose actions to LLMs through MCP protocol
+
+### Five Core Capabilities
+
+1. **Chat Generation.** Complete chat interfaces with streaming, persistence, and tool calling
+2. **Tool Calling.** Expose Ash actions as LLM-callable tools
+3. **Vectorization.** Automatic embeddings for semantic search
+4. **MCP Servers.** Model Context Protocol for IDE integration
+5. **Prompt-backed Actions.** Structured LLM outputs with type safety
+
+### Model Context Protocol (MCP)
+
+Standardized protocol for exposing tools to AI assistants.
+
+Supported by Claude Code, Cursor, Zed, ...
+
+AshAi provides MCP server support.
+
+### Development vs Production
+
+| Development         | Production              |
+| ------------------- | ----------------------- |
+| No authentication   | Optional authentication |
+| Development tools   | Controlled tool access  |
+| For IDE integration | For end users           |
+
+### Development MCP Setup
+
+Add to your `endpoint.ex` inside the `code_reloading?` block:
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+if code_reloading? do
+  # ... existing code ...
+
+  plug AshAi.Mcp.Dev,
+    # many AI tools still expect the older protocol version
+    protocol_version_statement: "2024-11-05",
+    otp_app: :twitter,
+    path: "/ash_ai/mcp"
+end
+```
+
+Now AI coding tools can discover and call your actions at `http://localhost:4000/ash_ai/mcp`.
+
+### Production MCP Setup
+
+Expose only the tools you list — nothing else:
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+# In your router — no special pipeline needed
+scope "/api" do
+  scope "/mcp" do
+    forward "/", AshAi.Mcp.Router,
+      tools: [:read_feed],
+      protocol_version_statement: "2024-11-05",
+      otp_app: :twitter
+  end
+end
+```
+
+Need auth? Add a standard Plug pipeline (e.g. API key) in front.
+
+### IDE Integration
+
+Point your AI coding tool at the MCP server. **Claude Code**:
+
+```bash
+claude mcp add --transport http ash_ai http://localhost:4000/ash_ai/mcp
+```
+
+Zed, Cursor, Windsurf, ... have equivalent config.
+
+AI assistants can now discover and call your Ash actions.
+
+### One Tool per Action Doesn't Compose
+
+*"How long are the last three tweets?"*
+
+With one MCP tool per action:
+
+* N tool round-trips
+* Intermediate results clog the model's context window
+* The model does the arithmetic in its head
+
+### ash_lua: Two Tools Instead of Many
+
+* `ash_lua_docs` — read documentation for the exposed API surface
+* `ash_lua_eval` — run a Lua script that calls those actions
+
+The model composes the whole task — query + filter + arithmetic — as **one script, one round-trip**.
+
+Pure BEAM Lua runtime (Luerl), no system Lua needed.
+
+### Scoping the Surface
+
+`AshLua.EvalActions` synthesizes `:docs` and `:eval` actions.
+
+Scripts can **only** call the listed `(resource, action)` pairs.
+
+Register both as ordinary AshAi tools and add them to the MCP `tools:` list.
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+defmodule Twitter.Agents.McpActions do
+  use Ash.Resource,
+    domain: Twitter.Agents,
+    extensions: [AshLua.EvalActions]
+
+  eval_actions do
+    resource Tweet, actions: [:read, :feed, :create]
+    resource Like, actions: [:read, :like, :unlike]
+    resource User, actions: [:read]
+  end
+end
+
+defmodule Twitter.Agents do
+  use Ash.Domain, otp_app: :twitter, extensions: [AshAi]
+
+  resources do
+    resource Twitter.Agents.McpActions
+  end
+
+  tools do
+    tool :ash_lua_docs, Twitter.Agents.McpActions, :docs
+    tool :ash_lua_eval, Twitter.Agents.McpActions, :eval
+  end
+end
+```
+
+### ash_lua Security Story
+
+* Actor, tenant, and context are threaded through to **every** Ash call a script makes
+* Scripts can't escalate, switch tenants, or call actions outside the scoped set
+* All your policies still apply
+* Run multiple agent resources side by side, each with its own scope
+
+### Lab 11 · MCP Servers & ash_lua
+
+```bash
+git switch lab-11-ash-ai-mcp
+```
+
+Follow `labs/11-ash-ai-mcp.md`.
+
+### Securing MCP with OAuth 2.1
+
+Remote MCP clients (claude.ai connectors) authenticate with **OAuth 2.1**:
+
+* discovery via `401` + `WWW-Authenticate` -> `/.well-known/*` metadata
+* **dynamic client registration** — Claude registers itself
+* authorization code + **PKCE**, audience-bound JWTs
+* your existing sign-in page, plus a consent screen
+
+### ash_authentication_oauth2_server
+
+Turns your AshAuthentication setup into an authorization server.
+
+```sh
+mix ash_authentication_oauth2_server.install \
+  --accounts Twitter.Accounts --user Twitter.Accounts.User \
+  --scope mcp
+```
+
+Scaffolds client/code/token/consent **resources**, a config module, secrets, and the `/oauth/*` + `/.well-known/*` routes.
+
+### Protecting the MCP endpoint
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+pipeline :mcp do
+  plug AshAuthentication.Phoenix.Oauth2Server.BearerPlug,
+    oauth2_server: Twitter.Oauth2Server
+end
+```
+
+The verified user becomes the **actor** for every tool call — your policies apply to AI agents exactly as they do to humans.
+
+### Lab 15 · OAuth-secured MCP for Claude
+
+```bash
+git switch lab-15-ash-ai-mcp-oauth
+```
+
+### Talking to Providers: ReqLLM
+
+AshAi talks to LLM providers through **ReqLLM**:
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+# config/dev.exs (and config/runtime.exs for prod)
+config :req_llm, openai_api_key: System.get_env("OPENAI_API_KEY")
+```
+
+Models are spec strings — `"provider:model-name"`:
+
+* `"openai:gpt-4o"`
+* `"anthropic:claude-sonnet-4-5"`
+
+Swapping providers is a one-string change.
+
+### Chat Generation
+
+AshAi provides a generator for complete chat features:
+
+```bash
+mix ash_ai.gen.chat --live
+```
+
+This creates:
+
+* `Conversation` and `Message` resources
+* LiveView components for real-time chat
+* Streaming responses via Phoenix PubSub
+* Durable processing with Ash + Oban
+* Built-in tool calling support
+
+### Tool Calling
+
+Tools allow LLMs to call Ash actions.
+
+The AI can:
+
+* Read data from resources
+* Create or update records
+* Execute actions with authorization
+
+### Defining Tools
+
+Tools are defined in your **Domain** using a `tools` block:
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+defmodule Twitter.Tweets do
+  use Ash.Domain,
+    extensions: [AshAi]
+
+  resources do
+    resource Twitter.Tweets.Tweet
+  end
+
+  tools do
+    tool :read_feed, Tweet, :feed do
+      description """
+      Retrieve the feed of tweets,
+      sorted by most recent first
+      """
+    end
+
+    tool :create_tweet, Tweet, :create do
+      description "Create a new tweet"
+    end
+  end
+end
+```
+
+### Making Attributes Public
+
+For tools to access data, attributes must be marked as `public?`:
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+defmodule Twitter.Tweets.Tweet do
+  # ...
+
+  attributes do
+    attribute :text, :string do
+      allow_nil? false
+      public? true  # AI can read this
+    end
+
+    attribute :internal_notes, :string do
+      public? false  # AI cannot access
+    end
+  end
+end
+```
+
+### Tool Calling in Action
+
+User: *"Show me the latest tweets"*
+
+1. LLM selects the `read_feed` tool
+2. Tool executes the `:feed` action
+3. Results returned to LLM
+4. LLM responds with formatted answer
+
+Authorization and policies apply to all tool calls.
+
+### Running the Agent Loop
+
+`AshAi.ToolLoop` drives the LLM ↔ tools cycle:
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+prompt_messages
+|> AshAi.ToolLoop.stream(
+  otp_app: :twitter,
+  tools: [:read_feed, :create_tweet],  # or `tools: true` for all
+  model: "openai:gpt-4o",
+  actor: context.actor,
+  tenant: context.tenant
+)
+```
+
+* `AshAi.ToolLoop.run/2` — single result
+* `AshAi.ToolLoop.stream/2` — streamed content, tool calls, tool results
+
+The generated chat feature uses this inside a message change.
+
+### Lab 12 · Chat Setup & Tool Calling
+
+```bash
+git switch lab-12-ash-ai-chat
+```
+
+Follow `labs/12-ash-ai-chat.md`.
+
+### Embeddings
+
+Convert text to numerical vectors that capture semantic meaning.
+
+```
+"Elixir is functional"     → [0.23, -0.45, 0.89, ...]
+"Elixir uses functions"    → [0.21, -0.43, 0.91, ...]  (similar)
+"Python is object-oriented" → [-0.67, 0.12, -0.34, ...] (different)
+```
+
+Enables semantic search by meaning, not just keywords.
+
+### Vectorization in AshAi
+
+Automatic vectorization using the `vectorize` block:
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+defmodule Twitter.Tweets.Tweet do
+  use Ash.Resource,
+    extensions: [AshAi, AshOban]
+
+  vectorize do
+    full_text do
+      text fn tweet -> "Tweet: #{tweet.text}" end
+      used_attributes [:text]
+    end
+
+    attributes text: :full_text_vector
+
+    embedding_model {AshAi.EmbeddingModels.ReqLLM,
+                     model: "openai:text-embedding-3-small", dimensions: 1536}
+
+    strategy :ash_oban
+  end
+end
+```
+
+### Vectorization Strategies
+
+AshAi supports three strategies for when to create embeddings:
+
+| Strategy        | When                        | Best For                        |
+| --------------- | --------------------------- | ------------------------------- |
+| `:ash_oban`     | Background job (async)      | Production apps (recommended)   |
+| `:after_action` | Immediately, in-transaction | Small datasets, blocks requests |
+| `:manual`       | You control when            | Custom workflows, optimization  |
+
+**Recommendation**: Use `:ash_oban` for production - async, resilient, observable.
+
+Custom provider? Implement the `AshAi.EmbeddingModel` behaviour (two callbacks) and pass your module as the `embedding_model`.
+
+### Semantic Search Action
+
+Create a read action that searches by vector similarity.
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+actions do
+  read :semantic_search do
+    argument :query, :string, allow_nil?: false
+
+    prepare fn query, _context ->
+      search_text = Ash.Query.get_argument(query, :query)
+
+      {:ok, [embedding]} =
+        AshAi.EmbeddingModels.ReqLLM.generate([search_text],
+          model: "openai:text-embedding-3-small",
+          dimensions: 1536
+        )
+
+      query
+      |> Ash.Query.sort(
+        {calc(vector_cosine_distance(full_text_vector, ^embedding)), :asc}
+      )
+      |> Ash.Query.limit(10)
+    end
+  end
+end
+```
+
+### Semantic vs Keyword Search
+
+Keyword search finds exact word matches and misses synonyms and related concepts:
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+Tweet
+|> Query.filter(
+  contains(text, "functional")
+)
+```
+
+Semantic search finds "functional", "declarative", "pure functions", "immutable":
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+Tweet
+|> Query.for_read(
+  :semantic_search,
+  %{query: "functional"}
+)
+```
+
+### Lab 13 · Vectorization & RAG
+
+```bash
+git switch lab-13-ash-ai-vectorization
+```
+
+Follow `labs/13-ash-ai-vectorization.md`.
+
+### What is RAG?
+
+Retrieval-Augmented Generation enhances LLM responses with relevant context.
+
+Workflow:
+
+1. Vectorize user's question
+2. Retrieve semantically similar content
+3. Inject context into prompt
+4. LLM generates answer using context
+
+### RAG with Prompt Actions
+
+Retrieve context and generate answers in a single action:
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+action :ask, :string do
+  argument :question, :string, allow_nil?: false
+
+  prepare fn input, _context ->
+    # Retrieve relevant tweets
+    context_tweets =
+      Tweet
+      |> Ash.Query.for_read(:semantic_search, %{query: input.arguments.question})
+      |> Ash.Query.limit(3)
+      |> Ash.read!()
+
+    Ash.ActionInput.set_argument(input, :context, format_tweets(context_tweets))
+  end
+
+  ...
+end
+```
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+action :ask, :string do
+  ...
+
+  run prompt(
+    "openai:gpt-4o-mini",
+    prompt: """
+    You are answering questions about tweets.
+
+    Relevant tweets:
+    <%= @input.arguments.context %>
+
+    Question: <%= @input.arguments.question %>
+    """
+  )
+end
+```
+
+The prompt is an EEx template — arguments set in `prepare` flow straight in.
+
+### RAG Example Flow
+
+User: *"What are people saying about Elixir?"*
+
+1. Question vectorized → `[0.23, -0.45, ...]`
+2. Top 3 similar tweets retrieved
+3. Context injected into prompt
+4. LLM generates answer using tweet context
+
+### Why Reactor?
+
+Action hooks have limitations:
+
+* Sequential execution only
+* No automatic rollback
+* Limited error handling
+
+Reactor provides:
+
+* Concurrent execution
+* Saga pattern with compensation
+* Automatic retries
+* Built-in telemetry
+
+### Reactor vs Action Hooks
+
+| Aspect             | Action Hooks        | Reactor                     |
+| ------------------ | ------------------- | --------------------------- |
+| **Execution**      | Sequential          | Concurrent where possible   |
+| **Error Handling** | Manual try/catch    | Automatic with compensation |
+| **Testing**        | Test entire action  | Test individual steps       |
+| **Observability**  | Custom logging      | Built-in telemetry          |
+| **Complexity**     | Simple workflows    | Complex workflows           |
+| **Reusability**    | Hard to reuse parts | Composable reactors         |
+| **Rollback**       | Manual cleanup      | Automatic saga pattern      |
+
+### Reactor RAG Example
+
+Multi-LLM workflow: reformulate → retrieve → answer.
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+defmodule Twitter.Ai.RagReactor do
+  use Reactor, extensions: [Ash.Reactor]
+
+  input :question
+
+  # LLM reformulates the question into a search query
+  action :reformulate_query, Tweet, :reformulate_query do
+    inputs %{question: input(:question)}
+  end
+
+  # Semantic search with the reformulated query
+  read :fetch_context_tweets, Tweet, :semantic_search do
+    inputs %{query: result(:reformulate_query)}
+  end
+
+  ...
+end
+```
+
+Build the context from the retrieved tweets, then answer:
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+defmodule Twitter.Ai.RagReactor do
+  ...
+
+  step :build_context do
+    argument :tweets, result(:fetch_context_tweets)
+    run fn %{tweets: tweets}, _ -> {:ok, format(tweets)} end
+  end
+
+  # LLM answers using the retrieved context
+  action :generate_answer, Tweet, :answer_with_context do
+    inputs %{question: input(:question), context: result(:build_context)}
+  end
+
+  return :generate_answer
+end
+```
+
+### Concurrent Execution
+
+Dependencies are declared via `result(...)` — steps with no dependency between them run concurrently:
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+step :fetch_tweets do
+  argument :question, input(:question)
+end
+
+step :fetch_user_bio do
+  argument :question, input(:question)
+end
+
+step :build_prompt do
+  # Waits for both concurrent steps to complete
+  argument :tweets, result(:fetch_tweets)
+  argument :bio, result(:fetch_user_bio)
+end
+```
+
+### Running a Reactor from an Action
+
+Pass the Reactor module directly to `run`:
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+action :ask_with_reactor, :map do
+  argument :question, :string, allow_nil?: false
+
+  run Twitter.Ai.RagReactor
+end
+```
+
+* Action arguments map to Reactor inputs automatically
+* The action context (actor, tenant) flows into the Reactor
+
+### Compensating Actions (Saga Pattern)
+
+If a step fails, Reactor unwinds the steps that already ran:
+
+* `create` / `update` / `destroy` / `action` steps accept `undo_action` — a compensating action Reactor calls automatically
+* Generic steps implement `compensate` — return `:ok` to accept the failure, `:retry` to try the step again
+* Read-only workflows (like our RAG) have nothing to roll back
+
+### Error Handling and Retries
+
+LLM APIs are flaky — rate limits, timeouts. Retry with backoff:
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+step :generate_answer do
+  argument :question, input(:question)
+  argument :context, result(:build_context)
+
+  max_retries 2
+
+  run fn args, _context ->
+    Tweet
+    |> Ash.ActionInput.for_action(:answer_with_context, args)
+    |> Ash.run_action()
+  end
+
+  # :retry tells Reactor to run the step again
+  compensate fn _error, _args, _context -> :retry end
+
+  # Exponential backoff between attempts: 1s, 2s, 4s...
+  backoff fn _error, _args, context ->
+    round(:math.pow(2, Map.get(context, :current_try, 0)) * 1000)
+  end
+end
+```
+
+### When to Use Each Approach
+
+Use action hooks when:
+
+* Simple, linear workflows
+* No parallelization needed
+* Minimal error recovery
+* Quick prototyping
+
+Use Reactor when:
+
+* Complex multi-step workflows
+* Need parallel execution
+* Require automatic rollback
+* Need detailed observability
+
+### Lab 14 · RAG with Reactor
+
+```bash
+git switch lab-14-ash-ai-reactor
+```
+
+Follow `labs/14-ash-ai-reactor.md`.
+
+### When to Use Each Feature
+
+| Feature             | Use Case                                         |
+| ------------------- | ------------------------------------------------ |
+| **Chat Generation** | Conversational interfaces, customer support      |
+| **Tool Calling**    | AI agents that need to read/write your data      |
+| **MCP Servers**     | Agent integration, developer tools               |
+| **ash_lua**         | Compositional agent tasks in one round-trip      |
+| **Vectorization**   | Semantic search, similarity matching             |
+| **RAG**             | AI answers grounded in your actual data          |
+| **Reactor**         | Complex workflows, parallel processing, rollback |
+
+### Resources & Documentation
+
+* **HexDocs**: [hexdocs.pm/ash_ai](https://hexdocs.pm/ash_ai)
+* **GitHub**: [github.com/ash-project/ash_ai](https://github.com/ash-project/ash_ai)
+* **Blog Post**: [Alembic AshAi Guide](https://alembic.com.au/blog/ash-ai-comprehensive-llm-toolbox-for-ash-framework)
+* **MCP Spec**: [spec.modelcontextprotocol.io](https://spec.modelcontextprotocol.io/)
+* **AshLua**: [hexdocs.pm/ash_lua](https://hexdocs.pm/ash_lua)
+* **Reactor Docs**: [hexdocs.pm/reactor](https://hexdocs.pm/reactor)
+
+### Labs 11-15 · AshAi in Practice
+
+Labs 11 to 15 run on `lab-11-ash-ai-mcp` through `lab-15-ash-ai-mcp-oauth`.
+
+## 11 · Next Steps
+
+**Read**
+
+* [Ash Framework](https://pragprog.com/titles/ldash/ash-framework/), the book by Rebecca Le and Zach Daniel
+* [hexdocs.pm/ash](https://hexdocs.pm/ash) guides and DSL reference
+* Ash: A Gentle Primer
+* [alembic.com.au/blog](https://alembic.com.au/blog)
+
+**Practise**
+
+* [Ash Tutorial](https://github.com/ash-project/ash_tutorial) Livebook
+* Finish the labs: `main` has every solution
+
+**Ask**
+
+* [Ash Discord](https://discord.gg/w3AXeARR2p)
+* [elixirforum.com/ash](https://elixirforum.com/ash)
+* [ash-hq.org/community](https://ash-hq.org/community)
+
+**Code with an agent**
+
+* [usage_rules](https://hexdocs.pm/usage_rules) gives your coding agent each package's own rules
+
+## 12 · Spark
+
+[github.com/ash-project/spark](https://github.com/ash-project/spark)
+
+### What is a DSL?
+
+A little language that is designed for a very specific purpose.
+
+* [https://en.wikipedia.org/wiki/Domain-specific_language](https://en.wikipedia.org/wiki/Domain-specific_language)
+* [https://martinfowler.com/dsl.html](https://martinfowler.com/dsl.html)
+* [https://martinfowler.com/books/dsl.html](https://martinfowler.com/books/dsl.html)
+
+### Why DSLs?
+
+* Concise Representation
+  * Minimal + No extraneous syntax
+* Safer
+  * Validation + Fewer options less room for error
+* Expressive power
+* Readable by SMEs
+  * Allow contributions from domain experts
+  * Better, more powerful and expressive abstractions
+* Declarative (less programming)
+
+### Issues with macro based DSLs in Elixir
+
+* More code, more decisions, more complexity
+* Harder to maintain (it’s a special snowflake)
+* Harder to test
+* Non standard
+* Lacks some utilities like formatter help no parens makes DSLs more readable typically
+* Doesn’t have LS support for editor hints
+* Not easily extensible
+* Still need to document your DSL
+
+### What if we could build Elixir DSLs without writing macros?
+
+### Why Spark?
+
+* Easier and safer
+  * no need to write macros, less plumbing
+* Standardised structure
+  * focus on designing the DSL to solve the business problem
+  * don’t write your own special snowflake
+* Extensibility
+  * other libs can come and extend
+* Autocomplete and hover help via Elixir Language Server
+* Auto docs, no docs for struct data declarations
+* Formatting helpers (no parens for your DSL generated for you)
+
+### Spark History
+
+* Started as part of Ash core
+* Powers all of the Ash ecosystem
+* Battle tested
+  * but needs some doc love
+* Split out of Ash core in Aug 2022
+  * Was part of Ash core from the beginning
+
+### `Spark.Dsl.Section`
+
+* must have at least one top level section
+* can be hidden with `top_level?: true`
+* a singleton - there can be only one
+  * multiple instances are merged together automatically
+* can contain nested section and entities
+
+### `Spark.Dsl.Entity`
+
+* repeatable list items
+* entities can contain other entities
+* some thoughts about merging with Section, but big impacts on Ash ecosystem
+
+### Everything in Ash is an extension
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+use Ash.Resource,
+  data_layer: AshPostgres.DataLayer,          # extension
+  authorizers: [Ash.Policy.Authorizer],       # extension
+  extensions: [AshGraphql.Resource, AshAi]    # extensions
+```
+
+* `postgres do ... end`, `graphql do ... end`, `vectorize do ... end` are DSL sections that an extension added
+* Ash core uses the same mechanism
+* Your project can define its own extension, no library needed
+
+### What we'll build: a mini AshArchival
+
+Add one line to a resource and get **soft deletes**:
+
+* an `archived_at` attribute is added
+* every **destroy** becomes an update that stamps `archived_at`
+* every **read** skips archived records
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+use Ash.Resource, extensions: [Twitter.Archival]
+
+archive do
+  attribute :deleted_at    # optional, defaults to :archived_at
+end
+```
+
+### Anatomy of an extension
+
+| Part             | Job                                                      |
+| ---------------- | -------------------------------------------------------- |
+| **Extension**    | declares DSL sections + which transformers/verifiers run |
+| **Info**         | introspection: read what the user configured             |
+| **Transformers** | compile time, **change** the resource                    |
+| **Verifiers**    | compile time, run last, only **check** the resource      |
+
+All four run when the resource module compiles. Nothing runs at request time.
+
+### Transformers
+
+A transformer receives the resource as data and returns a changed copy.
+
+`SetupArchival` makes three changes:
+
+1. **Add** the `archived_at` attribute
+2. **Rewrite** every destroy action into a soft destroy that sets `archived_at`
+3. **Filter** every read with `is_nil(archived_at)`
+
+`Ash.Resource.Builder` builds each piece as if you had typed it in the DSL. AshPostgres sees the new attribute, and `mix ash.codegen` writes the migration.
+
+### Transformers run in order
+
+`defaults [:read, :destroy]` become real actions inside one of Ash's own transformers. `SetupArchival` must run after it:
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+def after?(Ash.Resource.Transformers.SetPrimaryActions), do: true
+def after?(_), do: false
+```
+
+Spark sorts transformers by their `before?/1` and `after?/1` callbacks.
+
+The slides do not show `SetupArchival` itself. This is one way to write it, so the extension below compiles and runs. The lab's solution in the ash_training repo is the reference version.
+
+```elixir
+defmodule Twitter.Archival.Transformers.SetupArchival do
+  use Spark.Dsl.Transformer
+
+  alias Spark.Dsl.Transformer
+
+  @impl true
+  def after?(Ash.Resource.Transformers.SetPrimaryActions), do: true
+  def after?(_), do: false
+
+  @impl true
+  def transform(dsl) do
+    attribute = Transformer.get_option(dsl, [:archive], :attribute, :archived_at)
+
+    with {:ok, dsl} <-
+           Ash.Resource.Builder.add_new_attribute(dsl, attribute, :utc_datetime_usec,
+             public?: false
+           ) do
+      {:ok,
+       dsl
+       |> soft_destroys(attribute)
+       |> filter_reads(attribute)}
+    end
+  end
+
+  defp soft_destroys(dsl, attribute) do
+    {:ok, stamp} =
+      Ash.Resource.Builder.build_action_change(
+        {Ash.Resource.Change.SetAttribute, attribute: attribute, value: &DateTime.utc_now/0}
+      )
+
+    dsl
+    |> Transformer.get_entities([:actions])
+    |> Enum.filter(&(&1.type == :destroy))
+    |> Enum.reduce(dsl, fn action, dsl ->
+      Transformer.replace_entity(dsl, [:actions], %{
+        action
+        | soft?: true,
+          require_atomic?: false,
+          changes: action.changes ++ [stamp]
+      }, &same_action?(&1, action))
+    end)
+  end
+
+  defp same_action?(entity, action), do: entity.name == action.name and entity.type == action.type
+
+  defp filter_reads(dsl, attribute) do
+    {:ok, not_archived} =
+      Ash.Resource.Builder.build_preparation(
+        {Ash.Resource.Preparation.Build,
+         options: [filter: Ash.Expr.expr(is_nil(^Ash.Expr.ref(attribute)))]}
+      )
+
+    dsl
+    |> Transformer.get_entities([:actions])
+    |> Enum.filter(&(&1.type == :read))
+    |> Enum.reduce(dsl, fn action, dsl ->
+      Transformer.replace_entity(dsl, [:actions], %{
+        action
+        | preparations: action.preparations ++ [not_archived]
+      }, &same_action?(&1, action))
+    end)
+  end
+end
+```
+
+### Declaring the DSL
+
+```elixir
+defmodule Twitter.Archival do
+  @archive %Spark.Dsl.Section{
+    name: :archive,
+    schema: [attribute: [type: :atom, default: :archived_at]]
+  }
+
+  use Spark.Dsl.Extension,
+    sections: [@archive],
+    transformers: [Twitter.Archival.Transformers.SetupArchival]
+end
+```
+
+* `schema` is validated at compile time: a typo is a compile error
+* `describe` and `doc` options become hexdocs and editor hover help
+
+### Info modules
+
+```elixir
+defmodule Twitter.Archival.Info do
+  use Spark.InfoGenerator, extension: Twitter.Archival, sections: [:archive]
+end
+```
+
+A `Twitter.Tweets.Tweet` resource that uses the extension, on ETS. `primary_read_warning?: false` silences the warning Ash gives when a primary read action has preparations, since `SetupArchival` adds one on purpose:
+
+```elixir
+defmodule Twitter.Tweets.Tweet do
+  use Ash.Resource,
+    domain: Twitter.Tweets,
+    data_layer: Ash.DataLayer.Ets,
+    extensions: [Twitter.Archival],
+    primary_read_warning?: false
+
+  actions do
+    defaults [:read, :destroy, create: [:text]]
+  end
+
+  attributes do
+    uuid_primary_key :id
+    attribute :text, :string, allow_nil?: false, public?: true
+  end
+end
+
+defmodule Twitter.Tweets do
+  use Ash.Domain
+
+  resources do
+    resource Twitter.Tweets.Tweet do
+      define :create_tweet, args: [:text], action: :create
+      define :delete_tweet, action: :destroy
+      define :feed, action: :read
+    end
+  end
+end
+
+Twitter.Archival.Info.archive_attribute!(Twitter.Tweets.Tweet)
+```
+
+* `Spark.InfoGenerator` writes one function per option
+* Transformers and verifiers call the same functions
+
+### Verifiers
+
+A verifier runs after every transformer. It reads the resource and cannot change it.
+
+* Example: check that `archived_at` is a `utc_datetime_usec`
+* A failed check is a compile error that points at `archive.attribute` in the resource
+* The lab's solution has no verifier. Writing one is a stretch goal.
+
+Verifiers are for "this configuration makes no sense" errors.
+
+### What you get for ~80 lines
+
+* `Twitter.Tweets.Tweet` gains a private `archived_at` attribute
+* `delete_tweet!` archives. The feed, `Ash.get` and relationship loads all skip archived tweets.
+* The real `AshArchival` works the same way. It adds `exclude_read_actions`, `archive_related` and upsert handling.
+
+```elixir
+keep = Twitter.Tweets.create_tweet!("Ash is declarative")
+gone = Twitter.Tweets.create_tweet!("Delete me")
+
+:ok = Twitter.Tweets.delete_tweet!(gone)
+
+%{
+  feed: Twitter.Tweets.feed!() |> Enum.map(& &1.text),
+  get_archived: Ash.get(Twitter.Tweets.Tweet, gone.id) |> elem(0),
+  kept: Ash.get!(Twitter.Tweets.Tweet, keep.id).text
+}
+```
+
+An extension turns "we always do it this way" into one line of DSL.
+
+### Lab 16 · Over to you: build your own extension
+
+```bash
+git switch lab-16-spark-extensions
+```
+
+Soft deletes: follow `labs/16-spark-extensions.md`.
+
+## 13 · Wrap up
+
+### What we didn't cover
+
+* Custom types
+* Notifiers and PubSub
+* Splode errors
+* Seeds and testing
+* Reactor
+* Custom expressions
+* AshOban
+* Pagination
+* Multitenancy
+* Timeouts
+* Monitoring
+* AshTypescript
+
+### Alembic
+
+<img src="files/alembic-symbol.svg" alt="alembic" width="80" />
+
+A consultancy specialising in the Ash Framework.
+
+* Team upskilling and training
+* Building roadmap features
+* Ash Premium Support
+
+[alembic.com.au](https://alembic.com.au)
+
+<img src="files/qr-alembic-com-au.svg" alt="alembic.com.au QR code" width="170" />
