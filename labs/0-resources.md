@@ -1,5 +1,9 @@
 # Lab 0 - Resources
 
+Keep [`labs/cheat-sheet.md`](cheat-sheet.md) open next to the labs: it collects
+the commands and DSL snippets used throughout, from migrations to MCP, Reactor
+and Spark.
+
 ## Relevant Documentation
 
 - [Getting Started](https://hexdocs.pm/ash/get-started.html)

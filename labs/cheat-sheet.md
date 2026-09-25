@@ -114,6 +114,267 @@ json_api do
 end
 ```
 
+## Switching lab branches
+
+Each lab branch is the starting point for that lab. After checking one out:
+
+```
+mix setup
+```
+
+`ash_ai` bakes in support for the optional `req_llm` dependency when it is
+compiled, so switching between branches around labs 12-15 can leave a stale
+build where the compiler claims `req_llm` is missing. Rebuild it:
+
+```
+mix deps.compile ash_ai --force
+```
+
+## AshGraphql
+
+Add the extension with `mix ash.extend Twitter.Tweets.Tweet graphql`. Resource
+config lives in the `graphql` block; queries and mutations name an action:
+
+```elixir
+# Twitter.Tweets.Tweet
+graphql do
+  type :tweet
+  filterable_fields [:text, like_count: [:eq, :greater_than]]
+
+  queries do
+    list :feed, :feed
+  end
+end
+
+# Twitter.Tweets.Like
+graphql do
+  type :like
+
+  mutations do
+    create :like_tweet, :like
+
+    destroy :unlike_tweet, :unlike do
+      identity false
+    end
+  end
+end
+```
+
+Playground: <http://localhost:4000/api/gql/playground>, endpoint `/api/gql`.
+
+## AshAi: exposing actions as tools
+
+Tools are declared in the domain, one per action:
+
+```elixir
+tools do
+  tool :read_feed, Twitter.Tweets.Tweet, :feed do
+    description "Retrieve the feed of tweets, sorted by most recent first"
+  end
+
+  tool :unlike_tweet, Twitter.Tweets.Like, :unlike do
+    description "Unlike a tweet"
+    identity false
+  end
+end
+```
+
+The MCP server is mounted at `/api/mcp`. Talk to it by hand:
+
+```bash
+# initialize (note the mcp-session-id response header)
+curl -isS http://localhost:4000/api/mcp \
+  -H "content-type: application/json" \
+  -H "accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"curl","version":"0.0.0"}}}'
+
+# list tools
+curl -sS http://localhost:4000/api/mcp \
+  -H "content-type: application/json" \
+  -H "accept: application/json, text/event-stream" \
+  -H "mcp-session-id: <value from the initialize response>" \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
+```
+
+Register the dev MCP server (no auth) with Claude Code:
+
+```bash
+claude mcp add --transport http ash_ai http://localhost:4000/ash_ai/mcp
+```
+
+## AshAi: chat
+
+```bash
+export OPENAI_API_KEY="your-api-key-here"
+mix ash_ai.gen.chat --live
+mix ash.migrate
+```
+
+The chat UI is at <http://localhost:4000/chat>. Responses run as Oban jobs
+(`ash_oban`), so they only appear while the app, and therefore Oban, is running.
+
+## AshAi: prompt actions
+
+A generic action whose implementation is an LLM call:
+
+```elixir
+action :reformulate_query, :string do
+  argument :question, :string, allow_nil?: false
+
+  run prompt("openai:gpt-4o-mini",
+        prompt: """
+        Turn this question into a short search query: <%= @input.arguments.question %>
+        """
+      )
+end
+```
+
+## AshAi: vectorization
+
+```elixir
+vectorize do
+  full_text do
+    text fn tweet -> "Tweet: #{tweet.text}" end
+    used_attributes [:text]
+  end
+
+  embedding_model {AshAi.EmbeddingModels.ReqLLM,
+                   model: "openai:text-embedding-3-small", dimensions: 1536}
+
+  strategy :ash_oban
+end
+```
+
+The vector column and its index each need a migration:
+
+```
+mix ash.codegen add_tweet_vectors
+mix ash.migrate
+```
+
+## Ash.Reactor
+
+A reactor chains Ash actions and plain steps; `result/1` wires step outputs into
+later inputs:
+
+```elixir
+defmodule Twitter.Ai.RagReactor do
+  use Reactor, extensions: [Ash.Reactor]
+
+  input(:question)
+
+  action :reformulate_query, Twitter.Tweets.Tweet, :reformulate_query do
+    inputs %{question: input(:question)}
+  end
+
+  read :fetch_context_tweets, Twitter.Tweets.Tweet, :semantic_search do
+    inputs %{query: result(:reformulate_query)}
+  end
+
+  step :build_context do
+    argument :tweets, result(:fetch_context_tweets)
+    run fn %{tweets: tweets}, _ -> {:ok, Enum.map_join(tweets, "\n", & &1.text)} end
+  end
+
+  return :build_context
+end
+```
+
+Run it from a generic action by passing the module to `run`; Ash maps the
+action's arguments to the reactor's inputs:
+
+```elixir
+action :ask_with_reactor, :map do
+  argument :question, :string, allow_nil?: false
+  run Twitter.Ai.RagReactor
+end
+```
+
+## OAuth 2.1 for the MCP server
+
+```bash
+mix ash_authentication_oauth2_server.install \
+  --accounts Twitter.Accounts --user Twitter.Accounts.User \
+  --server-module Twitter.Oauth2Server \
+  --secrets-module Twitter.Accounts.Secrets \
+  --scope mcp --yes
+mix ash.codegen add_oauth2_server
+mix ash.migrate
+```
+
+Discovery documents clients use to find the server:
+
+```bash
+curl http://localhost:4000/.well-known/oauth-authorization-server
+curl http://localhost:4000/.well-known/oauth-protected-resource
+```
+
+Dynamic client registration:
+
+```bash
+curl -X POST http://localhost:4000/oauth/register \
+  -H 'content-type: application/json' \
+  -d '{"client_name":"Claude","redirect_uris":["https://claude.ai/api/mcp/auth_callback"],"grant_types":["authorization_code","refresh_token"],"response_types":["code"],"token_endpoint_auth_method":"none"}'
+```
+
+To test against claude.ai, expose the dev server with `ngrok http 4000`.
+
+## Spark extensions
+
+An extension is a module that declares DSL sections and transformers:
+
+```elixir
+defmodule Twitter.Archival do
+  @archive %Spark.Dsl.Section{
+    name: :archive,
+    schema: [
+      attribute: [type: :atom, default: :archived_at, doc: "When the record was archived"]
+    ]
+  }
+
+  use Spark.Dsl.Extension,
+    sections: [@archive],
+    transformers: [Twitter.Archival.Transformers.SetupArchival]
+end
+```
+
+An info module turns the section into introspection functions
+(`Twitter.Archival.Info.archive_attribute!/1`):
+
+```elixir
+defmodule Twitter.Archival.Info do
+  use Spark.InfoGenerator, extension: Twitter.Archival, sections: [:archive]
+end
+```
+
+A transformer rewrites the resource at compile time using
+`Ash.Resource.Builder`:
+
+```elixir
+defmodule Twitter.Archival.Transformers.SetupArchival do
+  use Spark.Dsl.Transformer
+
+  # `defaults [:read, :destroy]` only become real actions in this transformer
+  def after?(Ash.Resource.Transformers.SetPrimaryActions), do: true
+  def after?(_), do: false
+
+  def transform(dsl_state) do
+    attribute = Twitter.Archival.Info.archive_attribute!(dsl_state)
+    Ash.Resource.Builder.add_new_attribute(dsl_state, attribute, :utc_datetime_usec)
+  end
+end
+```
+
+Use it like any other extension:
+
+```elixir
+use Ash.Resource, extensions: [Twitter.Archival]
+
+archive do
+  attribute :deleted_at
+end
+```
+
 ## IEx Cheat Sheet
 
 ### Recompile after changes
