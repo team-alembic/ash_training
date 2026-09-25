@@ -34,7 +34,8 @@ defmodule TwitterWeb.Router do
   scope "/", TwitterWeb do
     pipe_through :browser
 
-    ash_authentication_live_session :authentication_required do
+    ash_authentication_live_session :authentication_required,
+      on_mount: [{TwitterWeb.LiveUserAuth, :live_user_required}] do
       live "/", TweetLive.Index, :index
       live "/tweets/new", TweetLive.Form, :new
       live "/tweets/:id/edit", TweetLive.Form, :edit
