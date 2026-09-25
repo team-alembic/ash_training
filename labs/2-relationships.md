@@ -134,7 +134,12 @@ mix ash.gen.resource Twitter.Tweets.Like \
 ```
 
 11. Then we'll add a relationship on the `Tweet` resource, using `has_many`,
-    showing that a tweet, `has_many` likes.
+    showing that a tweet `has_many` likes. Add this to the `relationships` block
+    of `Twitter.Tweets.Tweet`:
+
+```elixir
+has_many :likes, Twitter.Tweets.Like
+```
 
 We'll use this relationship in upcoming labs!
 
