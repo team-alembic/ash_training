@@ -9,22 +9,23 @@
 
 ## Context
 
-In Lab 11 we exposed an MCP server at `/api/mcp` — but anyone who can reach the
-endpoint can call our tools, and every call runs without an actor, so policies
-can't distinguish who is asking.
+In Lab 11 we protected the MCP server at `/api/mcp` with API keys. That works
+for clients you configure yourself, but it means creating a key in a console and
+pasting it into every client's config. Remote MCP clients like claude.ai's
+custom connectors don't take a static key at all.
 
-Remote MCP clients like claude.ai's custom connectors solve this with **OAuth
-2.1**: the client discovers your authorization server, registers itself (dynamic
-client registration), sends the user through your sign-in and consent screens,
-and then presents an audience-bound token on every MCP request. The
-`ash_authentication_oauth2_server` package turns your existing AshAuthentication
-setup into exactly such an authorization server — your existing users, your
-existing sign-in page, plus a consent screen and the OAuth protocol endpoints.
+They use **OAuth 2.1** instead: the client discovers your authorization server,
+registers itself (dynamic client registration), sends the user through your
+sign-in and consent screens, and then presents an audience-bound token on every
+MCP request. The `ash_authentication_oauth2_server` package turns your existing
+AshAuthentication setup into exactly such an authorization server — your
+existing users, your existing sign-in page, plus a consent screen and the OAuth
+protocol endpoints.
 
-In this lab we'll stand up the OAuth server, protect the MCP endpoint with it,
-and connect to it from Claude. Every MCP tool call will then run with the
-signed-in user as the actor — so the policies you wrote in Lab 6 apply to AI
-agents exactly as they do to humans.
+In this lab we'll stand up the OAuth server, switch the MCP endpoint from API
+keys to it, and connect to it from Claude. Every MCP tool call still runs with a
+user as the actor — now the one who signed in and consented — so the policies
+you wrote in Lab 6 keep applying to AI agents exactly as they do to humans.
 
 ## Steps
 
@@ -67,6 +68,18 @@ Have a look at what it scaffolded:
   — Client ID Metadata Documents, where a client identifies itself with an HTTPS
   URL pointing at its own metadata; that's the registration mechanism the
   current MCP spec recommends, with DCR kept for compatibility.
+- Because `cimd_enabled?: true` is set, `OauthClient` must also carry the
+  `AshAuthentication.Oauth2Server.ClientResource` extension (no migration
+  needed). Without it a client row is stored for every distinct URL `client_id`
+  ever resolved at `/authorize` and nothing prunes them — an unbounded-growth
+  denial-of-service vector, so the compiler rejects the combination:
+
+  ```elixir
+  use Ash.Resource,
+    extensions: [AshAuthentication.Oauth2Server.ClientResource],
+    ...
+  ```
+
 - Three new `secret_for/4` clauses in `Twitter.Accounts.Secrets` for
   `:issuer_url`, `:resource_url` and `:signing_secret`, with localhost defaults
   written to `config/dev.exs`. That config lands **only** in `config/dev.exs` —
@@ -101,7 +114,8 @@ must set the actor. Add this after `plug :load_from_session`:
 plug :set_actor, :user
 ```
 
-Add a pipeline that verifies bearer tokens and sets the actor:
+Replace the API key plug in the `:mcp` pipeline from Lab 11 with one that
+verifies OAuth bearer tokens and sets the actor:
 
 ```elixir
 pipeline :mcp do
@@ -110,6 +124,9 @@ pipeline :mcp do
     required?: true
 end
 ```
+
+(The API key strategy can stay on `User`; nothing reads API keys from requests
+anymore.)
 
 Mount the two route groups:
 
@@ -127,8 +144,8 @@ scope "/" do
 end
 ```
 
-And finally, protect the MCP scope from Lab 11 by adding `pipe_through :mcp` to
-it:
+The MCP scope from Lab 11 already does `pipe_through :mcp`, so it's now
+protected by OAuth:
 
 ```elixir
 scope "/api" do
@@ -196,12 +213,19 @@ Update the issuer/resource URLs in `config/dev.exs` to the tunnel URL
 - **claude.ai**: Settings → Connectors → Add custom connector → enter
   `https://<your-tunnel>/api/mcp`. Claude registers itself, opens your sign-in
   page, shows the consent screen, and connects.
-- **Claude Code**:
+- **Claude Code**: remove the API key entry from Lab 11 first, then add the
+  server without a header:
 
   ```sh
+  claude mcp remove twitter
   claude mcp add --transport http twitter https://<your-tunnel>/api/mcp
   # then inside Claude Code, run /mcp and complete the sign-in
   ```
+
+- **Claude Desktop**: in the `twitter` entry of `claude_desktop_config.json`,
+  drop the `--header` arguments and the `env` block, and point `mcp-remote` at
+  `https://<your-tunnel>/api/mcp`. After you restart Claude Desktop,
+  `mcp-remote` opens the sign-in page in your browser.
 
 Ask Claude to read the feed — then check your logs: the tool call runs with the
 OAuth user as actor, and the policies from Lab 6 apply.

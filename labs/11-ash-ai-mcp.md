@@ -18,7 +18,7 @@ In this lab, we'll set up two MCP servers:
 
 1. **Development MCP Server** - For use with IDEs and development tools
 2. **Production MCP Server** - For controlled access, exposing only specific
-   tools like reading the tweet feed
+   tools like reading the tweet feed, and only to callers with an API key
 
 Then, as a finale, we'll add **ash_lua** to the production server — instead of
 one tool per action, the LLM gets exactly two tools: one to read the exposed API
@@ -58,8 +58,6 @@ inside the `if code_reloading? do` block:
 ```elixir
 if code_reloading? do
   plug AshAi.Mcp.Dev,
-    # For many tools, you will need to set the `protocol_version_statement` to the older version.
-    protocol_version_statement: "2024-11-05",
     otp_app: :twitter,
     path: "/ash_ai/mcp"
 
@@ -67,20 +65,9 @@ if code_reloading? do
 end
 ```
 
-Delete the `protocol_version_statement` line and the comment above it. AshAi
-negotiates the MCP protocol version with each client by itself; forcing
-`2024-11-05` makes the server claim a version it doesn't actually implement.
-Afterwards the plug looks like this:
-
-```elixir
-if code_reloading? do
-  plug AshAi.Mcp.Dev,
-    otp_app: :twitter,
-    path: "/ash_ai/mcp"
-
-  # ...
-end
-```
+If the installer also added a `protocol_version_statement` option to the plug
+(with a comment about older protocol versions), delete it and the comment. AshAi
+negotiates the MCP protocol version with each client by itself.
 
 ### 2. Configure Development Tools
 
@@ -98,6 +85,27 @@ configuration varies by tool:
 ```bash
 claude mcp add --transport http ash_ai http://localhost:4000/ash_ai/mcp
 ```
+
+#### Claude Desktop
+
+Claude Desktop starts MCP servers as local commands, so it reaches an HTTP
+server through the `mcp-remote` bridge (this needs Node.js for `npx`). Open
+Settings → Developer → Edit Config and add the server to
+`claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "ash_ai": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "http://localhost:4000/ash_ai/mcp"]
+    }
+  }
+}
+```
+
+Then quit Claude Desktop completely and reopen it; it only reads the config on
+startup.
 
 #### For Zed
 
@@ -138,10 +146,19 @@ defmodule Twitter.Tweets do
   # ... existing resources block ...
 
   tools do
-    tool :read_feed, Twitter.Tweets.Tweet, :feed do
-      description "Retrieve the feed of tweets, sorted by most recent first"
-    end
+    tool :read_feed, Twitter.Tweets.Tweet, :feed
   end
+end
+```
+
+A tool takes its description from its action, and the description is what tells
+the model what a tool is for. So describe the `:feed` action in
+`lib/twitter/tweets/tweet.ex`:
+
+```elixir
+read :feed do
+  description "All tweets, newest first."
+  prepare build(sort: [inserted_at: :desc])
 end
 ```
 
@@ -154,8 +171,9 @@ Each tool definition:
 - Has a unique name (`:read_feed`)
 - Points to a resource (`Twitter.Tweets.Tweet`)
 - Specifies an action (`:feed`)
-- Includes a description for the AI to understand what the tool does, defaults
-  to the actions description if not provided.
+- Uses the action's description, unless you pass `description "..."` to the tool
+  to override it. Describing the action is usually better: the Lua docs in step
+  8 show the same descriptions.
 
 Other useful options on `tool`:
 
@@ -171,16 +189,55 @@ These tools can now be called by AI assistants and exposed via the MCP server.
 
 The production MCP server allows you to expose specific tools to external AI
 assistants. Unlike the development server, the production server gives you
-fine-grained control over what's available.
+fine-grained control over what's available, and who may use it: every tool call
+should run with a user as the actor, so your policies apply to the AI just as
+they do to people.
 
-Add a **new, separate** `scope "/api"` block for it in
-`lib/twitter_web/router.ex` — don't nest it inside the existing `scope "/api"`
-that does `pipe_through :api`; the MCP endpoint must not go through the JSON API
-pipeline. No special pipeline is needed at all, content negotiation is handled
-inside `AshAi.Mcp.Router`:
+We'll identify callers with API keys, using AshAuthentication's API key
+strategy:
+
+```bash
+mix ash_authentication.add_strategy api_key
+mix ash.migrate
+```
+
+The installer:
+
+- creates `Twitter.Accounts.ApiKey`, which stores the user a key belongs to, its
+  `expires_at`, and only a hash of the key itself
+- adds the `api_key` strategy, a `sign_in_with_api_key` action and a
+  `has_many :valid_api_keys` relationship (keys that haven't expired) to
+  `Twitter.Accounts.User`
+- registers `Twitter.Accounts.ApiKey` in the `Twitter.Accounts` domain
+- generates the migration for the `api_keys` table. The installer warns that it
+  "includes destructive operations"; that refers to the migration's `down`,
+  which drops the table again. `up` only creates it.
+- adds `plug AshAuthentication.Strategy.ApiKey.Plug` with `required?: false` to
+  the `:api` pipeline in `lib/twitter_web/router.ex`
+
+Remove that plug from the `:api` pipeline again: the plug reads keys from the
+`Authorization: Bearer ...` header, where the `:api` pipeline expects the tokens
+from Lab 9, and it would reject those. Give the MCP server its own pipeline
+instead:
+
+```elixir
+pipeline :mcp do
+  plug AshAuthentication.Strategy.ApiKey.Plug, resource: Twitter.Accounts.User
+end
+```
+
+The plug looks up the key's user and sets it as the actor, which AshAi's MCP
+server passes on to every action it runs. We leave out `required?: false`, so
+the plug uses its default, `required?: true`: a request without a valid key gets
+a `401`.
+
+Then add a **new, separate** `scope "/api"` block for the MCP server — don't
+nest it inside the existing `scope "/api"` that does `pipe_through :api`:
 
 ```elixir
 scope "/api" do
+  pipe_through :mcp
+
   scope "/mcp" do
     forward "/", AshAi.Mcp.Router,
       tools: [:read_feed],
@@ -197,31 +254,51 @@ the `read_feed` tool. The tool is referenced using the tool name from the
 development tools (`list_ash_resources`, `list_generators`, `get_usage_rules`).
 The production server only exposes the tools you explicitly list in the `tools:`
 option, which gives you precise control over what external AI assistants can
-access.
+access. Limiting the tool list is not authentication, though; that's what the
+API key is for.
 
-This training route is intentionally unauthenticated for local use. Before
-deploying it, require authentication supported by your MCP clients (OAuth 2.1 or
-an API key), authorize the resulting actor, and add rate limiting. Limiting the
-tool list is not an authentication mechanism. In Lab 15 we'll do exactly that:
-secure this endpoint with OAuth 2.1 so every tool call runs with a signed-in
-user as the actor.
+An API key works for clients you configure yourself. In Lab 15 we'll add OAuth
+2.1, which remote clients like claude.ai's custom connectors need. Before
+deploying either, also add rate limiting.
 
 ### 6. Test the Production MCP Server
 
-If your Phoenix server isn't still running from step 2, start it:
+Restart your Phoenix server so it picks up the new strategy and routes. This
+time start it with IEx, since we'll need a console:
 
 ```bash
-mix phx.server
+iex -S mix phx.server
 ```
 
-You can test the MCP server by connecting to it from an MCP client. The server
-exposes the `read_feed` tool which retrieves the feed of tweets.
+Create an API key for your user in the IEx console. Use the email you signed up
+with:
 
-You can also smoke-test it with curl. First initialize a session — note that the
+```elixir
+require Ash.Query
+
+query = Ash.Query.filter(Twitter.Accounts.User, email == "you@example.com")
+user = Ash.read_one!(query, authorize?: false)
+expires_at = DateTime.add(DateTime.utc_now(), 30, :day)
+
+api_key =
+  Ash.create!(Twitter.Accounts.ApiKey, %{user_id: user.id, expires_at: expires_at},
+    authorize?: false
+  )
+
+api_key.__metadata__.plaintext_api_key
+```
+
+Copy the key (it starts with `twitter_`). It's only available right after
+creation: the database stores just its hash. (`authorize?: false` is needed
+because `ApiKey`'s policies only let AshAuthentication itself in; that's fine in
+a console, where you're the admin.)
+
+Smoke-test the server with curl. First initialize a session — note that the
 `accept` header must offer both content types:
 
 ```bash
 curl -isS http://localhost:4000/api/mcp \
+  -H "authorization: Bearer <your api key>" \
   -H "content-type: application/json" \
   -H "accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"0.0.0"}}}'
@@ -232,15 +309,61 @@ requests:
 
 ```bash
 curl -sS http://localhost:4000/api/mcp \
+  -H "authorization: Bearer <your api key>" \
   -H "content-type: application/json" \
   -H "accept: application/json, text/event-stream" \
   -H "mcp-session-id: <value from the initialize response>" \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
 ```
 
-You should see exactly one tool: `read_feed`. The same two commands work against
-the development server if you swap the URL for
-`http://localhost:4000/ash_ai/mcp`.
+You should see exactly one tool: `read_feed`. Leave out the `authorization`
+header and you get a `401` instead. The same two commands work against the
+development server if you swap the URL for `http://localhost:4000/ash_ai/mcp`;
+it doesn't need a key.
+
+Now connect Claude to it.
+
+#### Claude Code
+
+```bash
+claude mcp add --transport http twitter http://localhost:4000/api/mcp \
+  --header "Authorization: Bearer <your api key>"
+```
+
+Run `/mcp` inside Claude Code to check that `twitter` is connected.
+
+#### Claude Desktop
+
+Add a second entry next to `ash_ai` in `claude_desktop_config.json` (Settings →
+Developer → Edit Config):
+
+```json
+{
+  "mcpServers": {
+    "twitter": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "http://localhost:4000/api/mcp",
+        "--header",
+        "Authorization:${TWITTER_AUTH}"
+      ],
+      "env": {
+        "TWITTER_AUTH": "Bearer <your api key>"
+      }
+    }
+  }
+}
+```
+
+The header value comes from `env` so that the arguments contain no spaces;
+Claude Desktop on Windows doesn't pass arguments with spaces through correctly.
+Quit Claude Desktop completely and reopen it. If the server doesn't show up, its
+log is at `~/Library/Logs/Claude/mcp-server-twitter.log` (macOS) or
+`%APPDATA%\Claude\logs\mcp-server-twitter.log` (Windows).
+
+Ask Claude what's in the tweet feed. It calls `read_feed`, as your user.
 
 ## Two tools instead of many — ash_lua
 
@@ -267,14 +390,9 @@ or call actions outside the scoped set. All your policies still apply.
 mix igniter.install ash_lua
 ```
 
-The Lua runtime is pure BEAM (Luerl) — no system Lua install required. The
-installer adds `ash_lua` to `mix.exs` and to the `import_deps` list in
-`.formatter.exs`.
-
-Your running server can't pick up a new dependency: until you restart it, every
-request fails with "You must restart your server after changing configuration
-files or your dependencies". Stop `mix phx.server` now; we'll start it again in
-step 11.
+The Lua runtime is pure BEAM (the `lua` package) — no system Lua install
+required. The installer adds `ash_lua` to `mix.exs` and to the `import_deps`
+list in `.formatter.exs`.
 
 ### 8. Declare the Lua Surface
 
@@ -354,6 +472,55 @@ belongs_to :user, Twitter.Accounts.User do
 end
 ```
 
+The model learns what each function does from ash_lua's docs, which show the
+resource and action descriptions. `:feed` has one from step 4; describe the rest
+of the surface too. In `lib/twitter/tweets/tweet.ex`:
+
+```elixir
+resource do
+  description "A short post written by a user. Other users can like it."
+end
+```
+
+```elixir
+create :create do
+  description "Post a new tweet as the current user."
+  # ...
+end
+```
+
+In `lib/twitter/tweets/like.ex`:
+
+```elixir
+resource do
+  description "A user's like of a tweet. A user can like each tweet once."
+end
+```
+
+```elixir
+create :like do
+  description "Like a tweet as the current user. Liking it again changes nothing."
+  # ...
+end
+
+destroy :unlike do
+  description "Remove the current user's like from a tweet."
+  # ...
+end
+```
+
+And in `lib/twitter/accounts/user.ex`:
+
+```elixir
+resource do
+  description "A user of the app. A user's email is only visible to that user."
+end
+```
+
+The three `list` functions map the `:read` actions from `defaults [:read]`,
+which can't take a description, so their docs pages have none. Their results
+link to the record type's page, which shows the resource description.
+
 ### 9. Create the Agent Surface
 
 Now create a dedicated resource for the agent. The `AshLua.EvalActions`
@@ -429,9 +596,12 @@ forward "/", AshAi.Mcp.Router,
   otp_app: :twitter
 ```
 
-Now start the server again (`mix phx.server`) — besides the new dependency, the
-`config/config.exs` change from step 10 also needs a restart. Run the step 6
-`tools/list` smoke test and you should see all three tools.
+Now restart the server (`iex -S mix phx.server`): the new dependency from step 7
+and the `config/config.exs` change from step 10 both need a restart. Run the
+step 6 `tools/list` smoke test and you should see all three tools.
+
+Your Claude clients lost the connection when the server stopped. In Claude Code,
+run `/mcp` and reconnect `twitter`; quit and reopen Claude Desktop.
 
 ### 12. Walkthrough
 
@@ -513,13 +683,14 @@ One `eval` call replaced what would otherwise be several tool round-trips plus
 arithmetic in the model's head — and every Ash call inside the script still
 flowed through the session's actor and your policies.
 
-That also shows in what the surface can do from `/api/mcp` for now:
+The actor is your API key's user, so scripts can write, too. Ask Claude to "like
+every tweet that mentions Ash" and check the result in the app: the likes are
+yours. A few things to know about the surface:
 
-- `likes.like` and `likes.unlike` need an actor, and this endpoint has none
-  until Lab 15, so they fail when called through MCP. (`likes.unlike` takes just
-  `{ input = { tweet_id = ... } }`, even though its docs page also lists `id`.)
-- `users.list` returns users without their `email`: the field policy from Lab 6
-  only shows your own email, and fields you may not see are left out. Tweets
+- `likes.unlike` takes just `{ input = { tweet_id = ... } }`, even though its
+  docs page also lists `id`.
+- `users.list` returns other users without their `email`: the field policy from
+  Lab 6 only shows your own, and fields you may not see are left out. Tweets
   still carry their author's email in `user_email`, because aggregates don't
   apply field policies (see Lab 6) — it's public in the feed on purpose, so the
   model can see it too.
@@ -530,11 +701,22 @@ That also shows in what the surface can do from `/api/mcp` for now:
    `lib/twitter/tweets.ex`:
    - Add a `:read_tweet` tool that uses the `:read` action, and expose it via
      the production MCP server's `tools:` list
+   - `:read` comes from `defaults [:read, :destroy]`, which has no description,
+     so give the tool one:
+     `tool :read_tweet, Twitter.Tweets.Tweet, :read do description "Find tweets by filter" end`
+   - Note that its results come back as a page (`results`, `has_more`, ...): the
+     default `:read` action supports pagination, `:feed` doesn't
 
 2. **Ask a compositional question** through an MCP client connected to
    `/api/mcp` — e.g. "which of the last 10 tweets has the most likes?" — and
    watch whether the model reaches for the per-action tools or composes a single
    `ash_lua_eval` script
+   - The read tools only return a tweet's attributes, not aggregates like
+     `like_count`, so the model can sort by likes but not see the counts. Load
+     them with the `load:` option from step 4, inside the `do` block of both
+     read tools: `load [:like_count]` in `:read_feed` and `:read_tweet`. Or take
+     the per-action tools out of the `tools:` list again: a Lua script can ask
+     for `like_count` in its `fields`
 
 3. **Tighten the surface**: create a second agent surface that only exposes the
    read actions, next to the first one:
@@ -542,9 +724,20 @@ That also shows in what the surface can do from `/api/mcp` for now:
      `Twitter.Agents.ReadOnlyMcpActions` resource (domain `Twitter.Agents`) that
      uses `AshLua.EvalActions` with `labels [:read_only]`
    - add it to the `resources` block in `lib/twitter/agents.ex`, and register
-     its `:docs` and `:eval` actions as tools with new tool names, e.g.
-     `:ash_lua_read_only_docs` and `:ash_lua_read_only_eval` (the actions can
-     keep their default names; only the tool names must be unique)
+     its `:docs` and `:eval` actions as tools with new tool names (the actions
+     can keep their default names; only the tool names must be unique), with
+     descriptions like in step 10:
+
+     ```elixir
+     tool :ash_lua_read_only_docs, Twitter.Agents.ReadOnlyMcpActions, :docs do
+       description "Read the docs for the read-only Lua API: which tweet, like and user reads a script can call, and how."
+     end
+
+     tool :ash_lua_read_only_eval, Twitter.Agents.ReadOnlyMcpActions, :eval do
+       description "Run a read-only Lua script against that API."
+     end
+     ```
+
    - add those two tools to the router's `tools:` list and restart the server
    - check that its docs list only the read operations, and that `tweets.create`
      doesn't exist in its `eval`

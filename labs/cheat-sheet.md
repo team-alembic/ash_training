@@ -122,14 +122,6 @@ Each lab branch is the starting point for that lab. After checking one out:
 mix setup
 ```
 
-`ash_ai` bakes in support for the optional `req_llm` dependency when it is
-compiled, so switching between branches around labs 12-15 can leave a stale
-build where the compiler claims `req_llm` is missing. Rebuild it:
-
-```
-mix deps.compile ash_ai --force
-```
-
 ## AshGraphql
 
 Add the extension with `mix ash.extend Twitter.Tweets.Tweet graphql`. Resource
@@ -183,27 +175,76 @@ A `tool` whose action doesn't exist still compiles; the mistake only shows up
 when `tools/list` fails with a 500. If that happens, check each tool's action
 name.
 
-The MCP server is mounted at `/api/mcp`. Talk to it by hand:
+The MCP server is mounted at `/api/mcp` and needs an API key. Create one in
+`iex -S mix` (the plaintext is only available right after creation):
+
+```elixir
+require Ash.Query
+
+query = Ash.Query.filter(Twitter.Accounts.User, email == "you@example.com")
+user = Ash.read_one!(query, authorize?: false)
+expires_at = DateTime.add(DateTime.utc_now(), 30, :day)
+
+api_key =
+  Ash.create!(Twitter.Accounts.ApiKey, %{user_id: user.id, expires_at: expires_at},
+    authorize?: false
+  )
+
+api_key.__metadata__.plaintext_api_key
+```
+
+Talk to it by hand:
 
 ```bash
 # initialize (note the mcp-session-id response header)
 curl -isS http://localhost:4000/api/mcp \
+  -H "authorization: Bearer <your api key>" \
   -H "content-type: application/json" \
   -H "accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"0.0.0"}}}'
 
 # list tools
 curl -sS http://localhost:4000/api/mcp \
+  -H "authorization: Bearer <your api key>" \
   -H "content-type: application/json" \
   -H "accept: application/json, text/event-stream" \
   -H "mcp-session-id: <value from the initialize response>" \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
 ```
 
-Register the dev MCP server (no auth) with Claude Code:
+Register both servers with Claude Code (the dev server needs no key):
 
 ```bash
 claude mcp add --transport http ash_ai http://localhost:4000/ash_ai/mcp
+claude mcp add --transport http twitter http://localhost:4000/api/mcp \
+  --header "Authorization: Bearer <your api key>"
+```
+
+With Claude Desktop, in `claude_desktop_config.json` (Settings → Developer →
+Edit Config; quit and reopen Claude Desktop afterwards):
+
+```json
+{
+  "mcpServers": {
+    "ash_ai": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "http://localhost:4000/ash_ai/mcp"]
+    },
+    "twitter": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "http://localhost:4000/api/mcp",
+        "--header",
+        "Authorization:${TWITTER_AUTH}"
+      ],
+      "env": {
+        "TWITTER_AUTH": "Bearer <your api key>"
+      }
+    }
+  }
+}
 ```
 
 ## AshAi: chat
