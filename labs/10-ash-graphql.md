@@ -18,7 +18,7 @@ mix ash.extend Twitter.Tweets.Tweet graphql --yes
 
 **Note:** Because our real schema is still commented out, this also generates an
 extra schema in `lib/twitter/graphql_schema.ex` (`Twitter.GraphqlSchema`) that
-does not compile. Delete that file — the router already points at
+we don't need. Delete that file — the router already points at
 `TwitterWeb.GraphqlSchema`, which we'll uncomment in step 3.
 
 2. Add a `query` to get the `:feed`
@@ -36,8 +36,9 @@ end
 3. Uncomment the contents of `TwitterWeb.GraphqlSchema` in
    `lib/twitter_web/graphql_schema.ex`.
 
-Do this step last — until at least one query is defined, the schema fails to
-compile with `The object type "query" must define one or more fields.`
+Only do this once step 2 is done — until at least one query is defined, the
+schema fails to compile with ``The object type `query` must define one or more
+fields.``
 
 Go to `localhost:4000/api/gql/playground`, and try the following query. Make
 sure that all fields referenced below are `public? true` — add `public? true`
@@ -55,8 +56,8 @@ query {
 }
 ```
 
-Browse the schema to see the kinds of things you can do, like filtering and
-sorting.
+Browse the schema (the green "SCHEMA" tab on the right edge of the playground)
+to see the kinds of things you can do, like filtering and sorting.
 
 For example:
 
@@ -88,7 +89,9 @@ Browse the schema again and see how the filter input type shrinks.
 
 - Try out filtering/sorting in the GraphQL Playground
 
-- Expose additional fields on the `:tweet` type
+- Expose additional fields on the `:tweet` type. Like attributes, calculations
+  and aggregates only show up once they're `public? true` — try it with the
+  `liked_by_me` calculation.
 
 - Expose the `like` action over the GraphQL API, using the `mutations`
   configuration. `:like` is a create action on `Twitter.Tweets.Like`, so add
@@ -115,8 +118,27 @@ end
 ```
 
 **Note:** These actions use `relate_actor`, so calling them without an actor
-fails with an unhelpful error — authenticate the request (e.g. a bearer token)
-so an actor is set.
+fails with an unhelpful error ("something went wrong"). The GraphQL routes go
+through the `:api` pipeline, which only reads the actor from a bearer token —
+being signed in to the app in your browser doesn't count. To get a token for
+your user, run this in `iex -S mix` (with your own email):
+
+```elixir
+require Ash.Query
+
+query = Ash.Query.filter(Twitter.Accounts.User, email == "you@example.com")
+user = Ash.read_one!(query, authorize?: false)
+{:ok, token, _claims} = AshAuthentication.Jwt.token_for_user(user)
+token
+```
+
+Then, in the playground, click the "HTTP HEADERS" button at the bottom of the
+query editor, choose "+ add new Header", enter the name `Authorization` and the
+value `Bearer <your token>`, and click the ✓ to save it. The button should now
+read "HTTP HEADERS (1)".
+
+Now the mutations run as your user. If you made `liked_by_me` public, query
+`likedByMe` on `feed` too — it now reflects your likes.
 
 - By default a mutation payload puts the record under a `result` field. Add
   `result_name :like` to your `like_tweet` mutation and see how the payload type
