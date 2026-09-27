@@ -28,26 +28,6 @@ top of the previous branch.
 > mix deps.compile ash_ai --force
 > ```
 
-### Maintaining the branches
-
-To fix something in an earlier lab, edit that lab's solution commit with an
-interactive rebase and let `--update-refs` carry all later lab branches along:
-
-```bash
-git rebase -i --update-refs lab-00-resources~1 main
-```
-
-If a fix changes a resource's database shape, regenerate the migrations of the
-affected lab commit (and any later ones) with `mix ash.codegen` as you go.
-
-To update dependencies, use igniter rather than `mix deps.update` — it runs each
-package's upgrade task, which applies the code and config changes a new version
-needs:
-
-```bash
-mix igniter.upgrade --all
-```
-
 ## Setup
 
 You need a terminal, a code editor, Erlang, Elixir and PostgreSQL.
