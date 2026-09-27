@@ -117,21 +117,9 @@ This is a great example of how Ash helps you apply policies _everywhere_ in your
 app, even places that are commonly overlooked.
 
 8. However, this is not the UX we want, because we still want to be able to see
-   the email of the author of a tweet. So let's add the `authorize? false`
-   option to the `user_email` aggregate on tweet.
-
-```elixir
-first :user_email, :user, :email do
-  authorize? false
-end
-```
-
-`authorize? false` deliberately bypasses the related user's read policy. That is
-acceptable for this training example because author email is intentionally
-public in the feed, but avoid this for sensitive fields in a real application.
-
-9. Our read policy hides the _whole_ user record just to protect one field. The
-   idiomatic way to hide a single attribute is a
+   the email of the author of a tweet. And our read policy hides the _whole_
+   user record just to protect one field. The idiomatic way to hide a single
+   attribute is a
    [field policy](https://hexdocs.pm/ash/policies.html#field-policies). Revert
    the read policy on `User` back to `authorize_if always()`, and instead add
    this to `User`:
@@ -149,14 +137,11 @@ end
 ```
 
 Now other users are readable, but their `email` loads as `%Ash.ForbiddenField{}`
-unless it's your own. Note that the feed still shows author emails either way:
+unless it's your own. The feed shows author emails again:
 [aggregates authorize access to the related records they reference, but never to the field itself](https://hexdocs.pm/ash/policies.html#aggregates),
 so the `User` field policy doesn't apply to the tweet's `user_email` aggregate.
-The `authorize? false` on the aggregate only skips the related user's _read
-policies_ — that's what steps 7–8 needed, but now that the read policy is back
-to `authorize_if always()`, removing it changes nothing visible. Keep it anyway:
-it documents that this aggregate must stay exempt if `User` read policies ever
-tighten again.
+That's what we want here, because author email is intentionally public in the
+feed. If it weren't, you'd add a field policy for `user_email` on `Tweet`.
 
 ## Try on your own
 

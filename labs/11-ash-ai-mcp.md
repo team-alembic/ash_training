@@ -329,10 +329,10 @@ lua do
 end
 ```
 
-Each `action` maps a Lua function to an Ash action: `action :feed,
-Twitter.Tweets.Tweet, :feed` inside `namespace "tweets"` makes the `:feed`
-action callable as `tweets.feed(...)` from Lua. Only the actions you map exist
-in Lua, and the resources themselves don't need an extension for this.
+Each `action` maps a Lua function to an Ash action:
+`action :feed, Twitter.Tweets.Tweet, :feed` inside `namespace "tweets"` makes
+the `:feed` action callable as `tweets.feed(...)` from Lua. Only the actions you
+map exist in Lua, and the resources themselves don't need an extension for this.
 
 The `labels` tag actions so that each agent surface (next step) can pick the
 ones it's allowed to use. We use `:agent` for everything our MCP agent may call,
@@ -515,11 +515,14 @@ flowed through the session's actor and your policies.
 
 That also shows in what the surface can do from `/api/mcp` for now:
 
-- `likes.like` and `likes.unlike` need an actor, and this endpoint has none until
-  Lab 15, so they fail when called through MCP. (`likes.unlike` takes just
+- `likes.like` and `likes.unlike` need an actor, and this endpoint has none
+  until Lab 15, so they fail when called through MCP. (`likes.unlike` takes just
   `{ input = { tweet_id = ... } }`, even though its docs page also lists `id`.)
 - `users.list` returns users without their `email`: the field policy from Lab 6
-  only shows your own email, and fields you may not see are left out.
+  only shows your own email, and fields you may not see are left out. Tweets
+  still carry their author's email in `user_email`, because aggregates don't
+  apply field policies (see Lab 6) — it's public in the feed on purpose, so the
+  model can see it too.
 
 ## Try on your own
 
@@ -543,5 +546,5 @@ That also shows in what the surface can do from `/api/mcp` for now:
      `:ash_lua_read_only_docs` and `:ash_lua_read_only_eval` (the actions can
      keep their default names; only the tool names must be unique)
    - add those two tools to the router's `tools:` list and restart the server
-   - check that its docs list only the read operations, and that
-     `tweets.create` doesn't exist in its `eval`
+   - check that its docs list only the read operations, and that `tweets.create`
+     doesn't exist in its `eval`

@@ -41,9 +41,14 @@ schema fails to compile with ``The object type `query` must define one or more
 fields.``
 
 Go to `localhost:4000/api/gql/playground`, and try the following query. Make
-sure that all fields referenced below are `public? true` — add `public? true`
-inside the `first :user_email, :user, :email do ... end` aggregate block (the
-other fields already are).
+sure that all fields referenced below are `public? true` — give the `user_email`
+aggregate a block with `public? true` (the other fields already are):
+
+```elixir
+first :user_email, :user, :email do
+  public? true
+end
+```
 
 ```graphql
 query {
