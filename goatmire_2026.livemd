@@ -2152,8 +2152,6 @@ if code_reloading? do
   # ... existing code ...
 
   plug AshAi.Mcp.Dev,
-    # many AI tools still expect the older protocol version
-    protocol_version_statement: "2024-11-05",
     otp_app: :twitter,
     path: "/ash_ai/mcp"
 end
@@ -2173,7 +2171,6 @@ scope "/api" do
   scope "/mcp" do
     forward "/", AshAi.Mcp.Router,
       tools: [:read_feed],
-      protocol_version_statement: "2024-11-05",
       otp_app: :twitter
   end
 end
