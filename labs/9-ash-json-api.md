@@ -60,6 +60,13 @@ count :like_count, :likes do
 end
 ```
 
+Refresh the endpoint and the attributes appear, but `like_count` still doesn't.
+`public?` makes a field _available_ to the API, but by default AshJsonApi only
+serializes public attributes. Aggregates and calculations have to be requested
+explicitly with a sparse fieldset, which we'll do in step 6. If you want them in
+every response, list the fields in the `json_api` block with
+`default_fields [:text, :inserted_at, :like_count]`.
+
 5. You'll notice also that the `links` are empty. We can add a `get` route to
    fetch a tweet.
 
