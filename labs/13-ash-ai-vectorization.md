@@ -337,9 +337,10 @@ end
 As in Lab 12, add `:semantic_search_tweets` to the expected tools list in
 `test/twitter/tweets/tweet_test.exs`. (We leave the chat agent's explicit
 `tools:` list in `respond.ex` alone for now — wiring RAG into the chat is one of
-the "Try on your own" exercises. This is also a good moment to revisit the
-`eval_actions` block from Lab 11 if you want Lua scripts to search semantically
-too.)
+the "Try on your own" exercises. This is also a good moment to revisit the `lua`
+block from Lab 11 if you want Lua scripts to search semantically too: add
+`action :search, Twitter.Tweets.Tweet, :semantic_search, labels: [:agent, :read_only]`
+to the `tweets` namespace in `lib/twitter/tweets.ex`.)
 
 ### 9. Test Semantic Search
 

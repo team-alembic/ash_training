@@ -179,6 +179,10 @@ tools do
 end
 ```
 
+A `tool` whose action doesn't exist still compiles; the mistake only shows up
+when `tools/list` fails with a 500. If that happens, check each tool's action
+name.
+
 The MCP server is mounted at `/api/mcp`. Talk to it by hand:
 
 ```bash
@@ -186,7 +190,7 @@ The MCP server is mounted at `/api/mcp`. Talk to it by hand:
 curl -isS http://localhost:4000/api/mcp \
   -H "content-type: application/json" \
   -H "accept: application/json, text/event-stream" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"curl","version":"0.0.0"}}}'
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"0.0.0"}}}'
 
 # list tools
 curl -sS http://localhost:4000/api/mcp \

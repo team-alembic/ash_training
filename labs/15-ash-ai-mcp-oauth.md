@@ -146,7 +146,6 @@ scope "/api" do
   scope "/mcp" do
     forward "/", AshAi.Mcp.Router,
       tools: [:read_feed, :ash_lua_docs, :ash_lua_eval],
-      protocol_version_statement: "2024-11-05",
       otp_app: :twitter
   end
 end

@@ -36,13 +36,21 @@ mix igniter.install ash_ai
 
 This will:
 
-- Add `ash_ai` and its dependencies to `mix.exs`
+- Add `ash_ai` and `req_llm` (the LLM client we'll use from Lab 12 on) to
+  `mix.exs`
 - Add `:ash_ai` to the `import_deps` list in `.formatter.exs`
 - **Automatically configure the development MCP server** at
   `http://localhost:4000/ash_ai/mcp`
 
 That's all the installer touches — `mix.exs`, `.formatter.exs`, and
 `endpoint.ex`. Wiring up domains and tools is our job in the steps below.
+
+The installer adds `req_llm` to `mix.exs` but doesn't fetch it, so run this
+next:
+
+```bash
+mix deps.get
+```
 
 The installer adds the development MCP server to `lib/twitter_web/endpoint.ex`,
 inside the `if code_reloading? do` block:
@@ -59,9 +67,20 @@ if code_reloading? do
 end
 ```
 
-The `protocol_version_statement` tells clients which MCP protocol version the
-server speaks — many AI coding tools still expect the older version, so the
-installer states it explicitly.
+Delete the `protocol_version_statement` line and the comment above it. AshAi
+negotiates the MCP protocol version with each client by itself; forcing
+`2024-11-05` makes the server claim a version it doesn't actually implement.
+Afterwards the plug looks like this:
+
+```elixir
+if code_reloading? do
+  plug AshAi.Mcp.Dev,
+    otp_app: :twitter,
+    path: "/ash_ai/mcp"
+
+  # ...
+end
+```
 
 ### 2. Configure Development Tools
 
@@ -165,8 +184,6 @@ scope "/api" do
   scope "/mcp" do
     forward "/", AshAi.Mcp.Router,
       tools: [:read_feed],
-      # For many tools, you will need to set the `protocol_version_statement` to the older version.
-      protocol_version_statement: "2024-11-05",
       otp_app: :twitter
   end
 end
@@ -176,10 +193,11 @@ This makes the production MCP server available at `/api/mcp` and exposes only
 the `read_feed` tool. The tool is referenced using the tool name from the
 `tools` block we just defined.
 
-**Note:** Unlike the development MCP server which automatically exposes all Ash
-resources and their actions, the production server only exposes the tools you
-explicitly list in the `tools:` option. This gives you precise control over what
-external AI assistants can access.
+**Note:** The development MCP server gives your coding agent a fixed set of
+development tools (`list_ash_resources`, `list_generators`, `get_usage_rules`).
+The production server only exposes the tools you explicitly list in the `tools:`
+option, which gives you precise control over what external AI assistants can
+access.
 
 This training route is intentionally unauthenticated for local use. Before
 deploying it, require authentication supported by your MCP clients (OAuth 2.1 or
@@ -190,7 +208,7 @@ user as the actor.
 
 ### 6. Test the Production MCP Server
 
-Start your Phoenix server:
+If your Phoenix server isn't still running from step 2, start it:
 
 ```bash
 mix phx.server
@@ -206,7 +224,7 @@ You can also smoke-test it with curl. First initialize a session — note that t
 curl -isS http://localhost:4000/api/mcp \
   -H "content-type: application/json" \
   -H "accept: application/json, text/event-stream" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"curl","version":"0.0.0"}}}'
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"0.0.0"}}}'
 ```
 
 The response carries an `mcp-session-id` header. Pass it back on subsequent
@@ -249,12 +267,19 @@ or call actions outside the scoped set. All your policies still apply.
 mix igniter.install ash_lua
 ```
 
-The Lua runtime is pure BEAM (Luerl) — no system Lua install required.
+The Lua runtime is pure BEAM (Luerl) — no system Lua install required. The
+installer adds `ash_lua` to `mix.exs` and to the `import_deps` list in
+`.formatter.exs`.
 
-### 8. Expose Resources to Lua
+Your running server can't pick up a new dependency: until you restart it, every
+request fails with "You must restart your server after changing configuration
+files or your dependencies". Stop `mix phx.server` now; we'll start it again in
+step 11.
 
-ash_lua ships two Spark extensions: `AshLua.Domain` for domain modules and
-`AshLua.Resource` for each resource you want callable from Lua.
+### 8. Declare the Lua Surface
+
+With ash_lua, you declare on each domain which actions Lua scripts may call, as
+named Lua functions grouped into namespaces.
 
 Add `AshLua.Domain` to `lib/twitter/tweets.ex` and `lib/twitter/accounts.ex`
 (both domains also need `otp_app: :twitter` so ash_lua can find them):
@@ -276,24 +301,64 @@ defmodule Twitter.Tweets do
 (Append `AshLua.Domain` to whatever extensions the domain already has — don't
 drop any of the existing ones.)
 
-Then add `AshLua.Resource` to `tweet.ex`, `like.ex`, and `user.ex`:
+Then add a `lua` block to `Twitter.Tweets`:
 
 ```elixir
-defmodule Twitter.Tweets.Tweet do
-  use Ash.Resource,
-    # ...
-    extensions: [AshGraphql.Resource, AshJsonApi.Resource, AshLua.Resource]
+lua do
+  namespace "tweets" do
+    action :feed, Twitter.Tweets.Tweet, :feed, labels: [:agent, :read_only]
+    action :list, Twitter.Tweets.Tweet, :read, labels: [:agent, :read_only]
+    action :create, Twitter.Tweets.Tweet, :create, labels: [:agent]
+  end
+
+  namespace "likes" do
+    action :list, Twitter.Tweets.Like, :read, labels: [:agent, :read_only]
+    action :like, Twitter.Tweets.Like, :like, labels: [:agent]
+    action :unlike, Twitter.Tweets.Like, :unlike, labels: [:agent]
+  end
+end
 ```
 
-By default the domain is exposed under a Lua table named after the module's last
-segment, and each resource under a similarly derived key — so the `:feed` action
-becomes callable as `tweets.tweet.feed(...)` from Lua.
+and one to `Twitter.Accounts`:
+
+```elixir
+lua do
+  namespace "users" do
+    action :list, Twitter.Accounts.User, :read, labels: [:agent, :read_only]
+  end
+end
+```
+
+Each `action` maps a Lua function to an Ash action: `action :feed,
+Twitter.Tweets.Tweet, :feed` inside `namespace "tweets"` makes the `:feed`
+action callable as `tweets.feed(...)` from Lua. Only the actions you map exist
+in Lua, and the resources themselves don't need an extension for this.
+
+The `labels` tag actions so that each agent surface (next step) can pick the
+ones it's allowed to use. We use `:agent` for everything our MCP agent may call,
+and `:read_only` for the reads; you'll use that one in "Try on your own".
+
+Lua scripts only see public fields. A like's `tweet_id` and `user_id` aren't
+public yet, so `likes.list` couldn't tell you which tweet a like belongs to.
+Make them public in `lib/twitter/tweets/like.ex`:
+
+```elixir
+belongs_to :tweet, Twitter.Tweets.Tweet do
+  allow_nil? false
+  attribute_public? true
+end
+
+belongs_to :user, Twitter.Accounts.User do
+  allow_nil? false
+  attribute_public? true
+end
+```
 
 ### 9. Create the Agent Surface
 
-Now create a dedicated resource that defines _which_ actions scripts may call.
-The `AshLua.EvalActions` extension synthesizes the two generic actions (`:docs`
-and `:eval`) on it.
+Now create a dedicated resource for the agent. The `AshLua.EvalActions`
+extension synthesizes the two generic actions (`:docs` and `:eval`) on it, and
+its `labels` pick which mapped actions scripts may call.
 
 Create `lib/twitter/agents/mcp_actions.ex`:
 
@@ -304,20 +369,24 @@ defmodule Twitter.Agents.McpActions do
     extensions: [AshLua.EvalActions]
 
   eval_actions do
-    resource Twitter.Tweets.Tweet, actions: [:read, :feed, :create]
-    resource Twitter.Tweets.Like, actions: [:read, :like, :unlike]
-    resource Twitter.Accounts.User, actions: [:read]
+    labels [:agent]
   end
 end
 ```
 
-(Once you've built the `:semantic_search` action in Lab 13, come back and add it
-to the `Tweet` list — scripts will be able to search semantically too.)
+An action is included when it has any of the listed labels. Scripts can only
+call those actions — everything else doesn't exist as far as the LLM is
+concerned. This is the natural place to apply least privilege; you can also run
+multiple agent resources side by side, each with its own labels.
 
-The `eval_actions` block is the source of truth: scripts can only call the
-listed `(resource, action)` pairs — everything else doesn't exist as far as the
-LLM is concerned. This is the natural place to apply least privilege; you can
-also run multiple agent resources side by side, each with its own scope.
+(Once you've built the `:semantic_search` action in Lab 13, come back and map it
+in the `tweets` namespace, e.g.
+`action :search, Twitter.Tweets.Tweet, :semantic_search, labels: [:agent, :read_only]`
+— scripts will be able to search semantically too.)
+
+ash_lua builds an agent's Lua surface once, on first use, and code reloading
+doesn't refresh it. Whenever you change a `lua` block or an agent's `labels`
+later on, restart `mix phx.server` to see the change.
 
 ### 10. Register the Two Tools
 
@@ -333,11 +402,19 @@ defmodule Twitter.Agents do
   end
 
   tools do
-    tool :ash_lua_docs, Twitter.Agents.McpActions, :docs
-    tool :ash_lua_eval, Twitter.Agents.McpActions, :eval
+    tool :ash_lua_docs, Twitter.Agents.McpActions, :docs do
+      description "Read the docs for the Lua API: which tweet, like and user actions a script can call, and how."
+    end
+
+    tool :ash_lua_eval, Twitter.Agents.McpActions, :eval do
+      description "Run a Lua script against that API. Use it for questions that need several queries, filtering or arithmetic, and get the final answer in one call."
+    end
   end
 end
 ```
+
+Without a `description`, the tools show up as "Call the docs tool" and "Call the
+eval tool", which gives the model no reason to use them.
 
 Don't forget to register the new domain in `config/config.exs` under
 `config :twitter, ash_domains: [...]`.
@@ -349,24 +426,31 @@ Add the two new tools to the `tools:` list in `lib/twitter_web/router.ex`:
 ```elixir
 forward "/", AshAi.Mcp.Router,
   tools: [:read_feed, :ash_lua_docs, :ash_lua_eval],
-  # For many tools, you will need to set the `protocol_version_statement` to the older version.
-  protocol_version_statement: "2024-11-05",
   otp_app: :twitter
 ```
 
+Now start the server again (`mix phx.server`) — besides the new dependency, the
+`config/config.exs` change from step 10 also needs a restart. Run the step 6
+`tools/list` smoke test and you should see all three tools.
+
 ### 12. Walkthrough
 
-Connect an MCP client to `/api/mcp` and watch how the model drives itself with
-just the two tools.
+This is more interesting with some data: if you only have a tweet or two, create
+a few more in the app (and like some of them) first.
+
+Connect an MCP client to `/api/mcp` and ask it something compositional, like
+"How long are the last three tweets?". The server also exposes `read_feed`, and
+for a question this small the model may simply use that. To watch it work with
+just the two Lua tools, temporarily take `:read_feed` out of the `tools:` list.
 
 First, it discovers the surface:
 
 ```text
 LLM → ash_lua_docs({})
-←   full markdown index of the scoped surface
-    (tweets.tweet.feed, tweets.tweet.create, tweets.like.like, ...)
+←   a compact index of every operation in the scoped surface
+    (tweets.feed, tweets.create, likes.like, ...)
 
-LLM → ash_lua_docs({ name = "tweets.tweet.feed" })
+LLM → ash_lua_docs({ name = "tweets.feed" })
 ←   the focused page for that one operation: inputs, fields, examples
 ```
 
@@ -377,20 +461,26 @@ Then it composes the whole task as one script:
 
 ```text
 LLM → ash_lua_eval({ script = """
-  local feed = assert(tweets.tweet.feed({ limit = 3, fields = { "text" } }))
+  local feed = assert(tweets.feed({ limit = 3, fields = { "text" } }))
 
   local lengths = {}
   for i, tweet in ipairs(feed) do
     lengths[i] = #tweet.text
   end
 
-  return feed, lengths
+  return { feed = feed, lengths = lengths }
 """ })
 ```
 
+Note the single table in `return`. Lua scripts here follow the `value, err`
+convention: a second return value is treated as an error, so
+`return feed, lengths` would report `lengths` as the error.
+
 (The `tool({ ... })` calls above are shorthand for readability. On the wire,
-every tool generated by ash_ai nests its arguments under a required `input` key
-in the `inputSchema`, so the actual JSON-RPC request looks like this:
+ash_ai tools put the action's inputs — its arguments and accepted attributes —
+under an `input` key in the `inputSchema`. Read options such as `limit`,
+`filter` and `sort` on tools like `read_feed` stay at the top level. So the
+actual JSON-RPC request looks like this:
 
 ```json
 {
@@ -411,15 +501,25 @@ The response is a stable shape:
 
 ```elixir
 %{
-  result: <the script's return value, or nil on error>,
-  error: <%{class, errors: [...]} or nil>,
-  print_output: [<anything the script printed>, ...]
+  result: <the script's first return value; nil if the script raised>,
+  error: <nil on success; otherwise an error table: %{class: "lua_error", ...}
+          if the script raised, or the script's second return value in the
+          same shape>,
+  print_output: [<lines printed with print(...); empty if the script raised>]
 }
 ```
 
 One `eval` call replaced what would otherwise be several tool round-trips plus
 arithmetic in the model's head — and every Ash call inside the script still
 flowed through the session's actor and your policies.
+
+That also shows in what the surface can do from `/api/mcp` for now:
+
+- `likes.like` and `likes.unlike` need an actor, and this endpoint has none until
+  Lab 15, so they fail when called through MCP. (`likes.unlike` takes just
+  `{ input = { tweet_id = ... } }`, even though its docs page also lists `id`.)
+- `users.list` returns users without their `email`: the field policy from Lab 6
+  only shows your own email, and fields you may not see are left out.
 
 ## Try on your own
 
@@ -433,7 +533,15 @@ flowed through the session's actor and your policies.
    watch whether the model reaches for the per-action tools or composes a single
    `ash_lua_eval` script
 
-3. **Tighten the surface**: create a second `AshLua.EvalActions` resource that
-   only exposes read actions, register it under different tool names
-   (`eval_action_name` / `docs_action_name` avoid collisions), and expose it
-   alongside the first
+3. **Tighten the surface**: create a second agent surface that only exposes the
+   read actions, next to the first one:
+   - add `lib/twitter/agents/read_only_mcp_actions.ex` with a
+     `Twitter.Agents.ReadOnlyMcpActions` resource (domain `Twitter.Agents`) that
+     uses `AshLua.EvalActions` with `labels [:read_only]`
+   - add it to the `resources` block in `lib/twitter/agents.ex`, and register
+     its `:docs` and `:eval` actions as tools with new tool names, e.g.
+     `:ash_lua_read_only_docs` and `:ash_lua_read_only_eval` (the actions can
+     keep their default names; only the tool names must be unique)
+   - add those two tools to the router's `tools:` list and restart the server
+   - check that its docs list only the read operations, and that
+     `tweets.create` doesn't exist in its `eval`

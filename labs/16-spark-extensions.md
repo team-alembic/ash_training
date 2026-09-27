@@ -99,7 +99,6 @@ use Ash.Resource,
   extensions: [
     AshGraphql.Resource,
     AshJsonApi.Resource,
-    AshLua.Resource,
     AshAi,
     AshOban,
     Twitter.Archival
