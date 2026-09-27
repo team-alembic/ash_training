@@ -28,14 +28,12 @@ agents exactly as they do to humans.
 
 ## Steps
 
-### 1. Upgrade AshAuthentication and add the OAuth server package
+### 1. Add the OAuth server package
 
-The OAuth server builds on AshAuthentication 5. In `mix.exs`:
+In `mix.exs`:
 
 ```elixir
-{:ash_authentication, "~> 5.0.0-rc.12"},
 {:ash_authentication_oauth2_server, "~> 0.3.0"},
-{:ash_authentication_phoenix, "~> 3.0.0-rc"},
 ```
 
 Then fetch and compile:
@@ -43,13 +41,6 @@ Then fetch and compile:
 ```sh
 mix deps.get && mix compile
 ```
-
-The upgrade needs one fix: in `ash_authentication_phoenix` 3.x,
-`use AshAuthentication.Phoenix.Router` provides `set_actor/2` itself, so the
-`import AshAuthentication.Plug.Helpers` line we added to the router in Lab 9 now
-fails to compile with a conflicting-import error. Delete that import from
-`lib/twitter_web/router.ex` — the existing `plug :set_actor, :user` keeps
-working. Then run the test suite; everything else about the upgrade is drop-in.
 
 ### 2. Run the installer
 

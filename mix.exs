@@ -38,8 +38,8 @@ defmodule Twitter.MixProject do
       # Ash
       {:ash, "~> 3.0"},
       {:ash_admin, "~> 1.0"},
-      {:ash_authentication, "~> 4.0"},
-      {:ash_authentication_phoenix, "~> 2.0"},
+      {:ash_authentication, "~> 5.0.0-rc.12"},
+      {:ash_authentication_phoenix, "~> 3.0.0-rc"},
       {:ash_graphql, "~> 1.0"},
       {:ash_json_api, "~> 1.0"},
       {:ash_phoenix, "~> 2.0"},

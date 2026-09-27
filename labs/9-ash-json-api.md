@@ -12,9 +12,9 @@
 ## Steps
 
 1. Loading a bearer token assigns the user to the connection, but Ash APIs read
-   their actor through `Ash.PlugHelpers`. Import
-   `AshAuthentication.Plug.Helpers` in `TwitterWeb.Router` and add this after
-   `plug :load_from_bearer` in the `:api` pipeline:
+   their actor through `Ash.PlugHelpers`. In `TwitterWeb.Router`, add this after
+   `plug :load_from_bearer` in the `:api` pipeline (`set_actor/2` comes with
+   `use AshAuthentication.Phoenix.Router`, like `load_from_bearer`):
 
 ```elixir
 plug :set_actor, :user
