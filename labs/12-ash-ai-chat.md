@@ -50,11 +50,6 @@ test environments where the AI integration may intentionally be disabled.
 Other providers use the same pattern, e.g. `anthropic_api_key` or
 `google_api_key` — configure only the ones you need.
 
-While you're in `config/runtime.exs`: earlier versions of AshAi used LangChain,
-and this app still carries a leftover
-`config :langchain, :openai_key, System.get_env("OPENAI_API_KEY")` line at the
-bottom of the file. Nothing reads it anymore — delete it.
-
 All you need to do is set the environment variable in your terminal:
 
 ```bash
@@ -69,6 +64,9 @@ Run the chat generator:
 mix ash_ai.gen.chat --live
 ```
 
+It asks "Modify mix.exs and install? [Y/n]" before adding its dependencies;
+answer yes.
+
 Useful flags: `--provider` (e.g. `anthropic` or `gemini` instead of the OpenAI
 default), `--route` (defaults to `/chat`), `--live-component` (an embeddable
 LiveComponent instead of a full-page LiveView), and `--user`/`--domain` to point
@@ -78,16 +76,26 @@ The generator will create:
 
 - `Twitter.Chat` domain module
 - `Twitter.Chat.Conversation` resource (for storing chat conversations)
-- `Twitter.Chat.Message` resource (for storing individual messages)
-- LiveView components for the chat interface
+- `Twitter.Chat.Message` resource (for storing individual messages), with its
+  changes in `lib/twitter/chat/message/changes/`
+- `TwitterWeb.ChatLive` (`lib/twitter_web/live/chat_live.ex`), the chat
+  interface
 - Routes for accessing the chat
+- `Twitter.AiAgentActorPersister`, which stores the user who sent a message so
+  the Oban job that answers it runs as that user
 
 It also touches more than the chat resources: it installs `oban` (via
 `ash_oban`), `mdex`, and `lumis` as dependencies, configures and supervises Oban
 (in `config/config.exs` and `lib/twitter/application.ex`, plus
 `config :twitter, Oban, testing: :manual` in `config/test.exs`), generates the
 Oban and chat migrations, and adds the `:req_llm` API key config from step 1 to
-`config/runtime.exs` if it's missing.
+`config/runtime.exs` if it's missing. It also updates `.formatter.exs` and
+`.igniter.exs`, and may reformat an existing migration. When it generates the
+chat migration, it warns that it "includes destructive operations"; that refers
+to the migration's `down`, which drops the tables again.
+
+At the end it prints a notice about `tools: true`; we'll deal with that in
+step 5.
 
 The generated response logic lives in
 `lib/twitter/chat/message/changes/respond.ex`. It builds the message history
@@ -115,40 +123,84 @@ resources — all that's left is to apply them:
 mix ash.migrate
 ```
 
-### 4. Secure the Generated Chat Resources
+### 4. Check the Generated Policies
 
-The generator provides the chat mechanics, but your application still owns its
-authorization model. Add `authorizers: [Ash.Policy.Authorizer]` to both chat
-resources and enforce ownership:
+The generator provides the chat mechanics, but authorization is your
+application's job, so check what it set up. Both chat resources use
+`Ash.Policy.Authorizer` with these policies:
 
 ```elixir
 # Conversation
-policy action(:create) do
-  authorize_if actor_present()
-end
+policies do
+  bypass AshAi.Checks.ActorIsAshAi do
+    authorize_if always()
+  end
 
-policy action_type(:read) do
-  authorize_if expr(user_id == ^actor(:id))
-end
+  policy action_type(:create) do
+    authorize_if relating_to_actor(:user)
+  end
 
-policy action(:destroy) do
-  authorize_if expr(user_id == ^actor(:id))
+  policy action_type([:read, :update, :destroy]) do
+    authorize_if relates_to_actor_via(:user)
+  end
 end
 
 # Message
-policy action_type(:read) do
-  authorize_if expr(conversation.user_id == ^actor(:id))
+policies do
+  bypass AshAi.Checks.ActorIsAshAi do
+    authorize_if always()
+  end
+
+  policy always() do
+    authorize_if relates_to_actor_via([:conversation, :user])
+  end
 end
 ```
 
-Add owner checks for message creation/destroy and explicit bypasses for the
-generated internal Oban/AshAi actions. When a private `conversation_id` is
-provided to message creation, load it through `Twitter.Chat.get_conversation!/2`
-with the current action context before using it. A private argument is not an
-authorization check.
+Users only see and change their own conversations, and only their own
+conversations' messages. That also covers posting a message into someone else's
+conversation. The `ActorIsAshAi` bypass is for the agent itself: `respond.ex`
+writes the streamed answer with `actor: %AshAi{}`.
+
+One thing these policies don't cover is naming conversations. The
+`:name_conversation` Oban trigger on `Conversation` runs from Oban's scheduler,
+without a user, so the owner policies hide every conversation from it. Its
+`where expr(needs_title)` also counts the conversation's messages, which is a
+separate read of `Message`. Let Oban through on both resources by adding this
+bypass at the top of both `policies` blocks:
+
+```elixir
+bypass AshOban.Checks.AshObanInteraction do
+  authorize_if always()
+end
+```
+
+Then pass the flag the bypass checks on to that nested read of `Message`, by
+adding `shared_context` to the trigger in `Conversation`:
+
+```elixir
+trigger :name_conversation do
+  # ...
+  where expr(needs_title)
+  shared_context [:ash_oban?]
+end
+```
+
+Without it, the bypass on `Message` doesn't see that it's running inside Oban,
+and the count comes back empty.
 
 Finally, pass `actor: socket.assigns.current_user` to `message_history!` in the
-generated LiveView. Every read that relies on actor-scoped policies must receive
+generated LiveView:
+
+```elixir
+Twitter.Chat.message_history!(conversation.id,
+  stream?: true,
+  actor: socket.assigns.current_user
+)
+```
+
+Without an actor, the `Message` policy forbids the read and opening a
+conversation fails. Every read that relies on actor-scoped policies must receive
 the actor.
 
 ### 5. Define Tweet Tools
@@ -160,28 +212,23 @@ and add two more tools to that existing block:
 
 ```elixir
 tools do
-  tool :read_feed, Twitter.Tweets.Tweet, :feed do
-    description "Retrieve the feed of tweets, sorted by most recent first"
-  end
+  tool :read_feed, Twitter.Tweets.Tweet, :feed
 
   # Add these two:
   tool :read_tweet, Twitter.Tweets.Tweet, :read do
     description "Retrieve a list of tweets, also supports filtering, sorting, and more"
   end
 
-  tool :create_tweet, Twitter.Tweets.Tweet, :create do
-    description "Create a new tweet with text content"
-  end
+  tool :create_tweet, Twitter.Tweets.Tweet, :create
 end
 ```
 
+As in Lab 11, a tool takes its description from its action: `:feed` and
+`:create` have descriptions, so their tools don't need one. `:read` comes from
+`defaults [:read, :destroy]`, which has none, so `:read_tweet` gets its own.
+
 (Tools can also be defined on the resource itself with the two-argument form
 `tool :read_feed, :feed` inside a `tools` block on the resource.)
-
-Note: the test `"exposes only the declared tweet feed tool"` in
-`test/twitter/tweets/tweet_test.exs` (from Lab 11) asserts the exact list of
-tools on the domain, so it will start failing here — update its expected tools
-as you add new ones.
 
 Then make the tools available to the chat agent. The generated `respond.ex`
 ships with `tools: true`, which exposes every tool in the app to the agent —
@@ -220,7 +267,8 @@ Try asking the AI:
 - "Create a tweet that says 'Hello from AI!'"
 - "What tweets are in the feed?"
 
-Watch the console to see the AI making tool calls to your Tweet actions.
+The chat shows each tool call the AI makes, with the tool's name, so you can see
+which of your Tweet actions it used.
 
 ### 7. Configure Tool Calling Behavior
 
@@ -229,7 +277,7 @@ tool in `lib/twitter/tweets.ex`:
 
 ```elixir
 tool :read_feed, Twitter.Tweets.Tweet, :feed do
-  description "Retrieve the feed of tweets, sorted by most recent first. Returns a list of tweets with their text, user email, and like count."
+  description "Retrieve the feed of tweets. Returns a list of tweets with their text, user email, and like count."
 
   # Load calculations/aggregates/relationships into the tool's response
   load [:user_email, :like_count]
@@ -251,10 +299,10 @@ Let's add the ability for the AI to like tweets on behalf of the user. Add this
 to the `tools` block:
 
 ```elixir
-tool :like_tweet, Twitter.Tweets.Like, :like do
-  description "Like a tweet. The current user will be marked as liking the tweet."
-end
+tool :like_tweet, Twitter.Tweets.Like, :like
 ```
+
+The `:like` action already has a description from Lab 11.
 
 Remember to add `:like_tweet` to the `tools:` list in `respond.ex` too.
 
@@ -308,17 +356,34 @@ tab.
 
 ## Try on your own
 
-- Add a tool for unliking tweets using the `:unlike` action
+- Add a tool for unliking tweets using the `:unlike` action, and add it to the
+  `tools:` list in `respond.ex`
   - you should set `identity` to false
 - Mount the Oban Web dashboard so you can watch the chat jobs: add
-  `{:oban_web, "~> 2.0"}` to your deps, then `import Oban.Web.Router` and
-  `oban_dashboard("/oban")` in your router's authenticated routes
-- Test your tools without the UI: run
-  `AshAi.iex_chat(otp_app: :twitter, model: "openai:gpt-4o", actor: user)` in
-  `iex -S mix` and ask it to show the feed
-- Switch the chat to a different provider by changing the model string in
-  `respond.ex` (e.g. `"anthropic:claude-sonnet-4-5"`) and configuring the
-  matching API key
+  `{:oban_web, "~> 2.0"}` to your deps and `import Oban.Web.Router` at the top
+  of your router, then mount `oban_dashboard("/oban")` in a `scope "/"` with
+  `pipe_through :browser` inside the
+  `if Application.compile_env(:twitter, :dev_routes)` block, next to the
+  LiveDashboard. Like the LiveDashboard it's a development tool. Don't put it in
+  the `ash_authentication_live_session`: the dashboard is its own live session,
+  and live sessions can't be nested.
+- Test your tools without the UI: in `iex -S mix`, look up your user and start a
+  chat, then ask it to show the feed:
+
+  ```elixir
+  require Ash.Query
+
+  query = Ash.Query.filter(Twitter.Accounts.User, email == "you@example.com")
+  user = Ash.read_one!(query, authorize?: false)
+
+  AshAi.iex_chat(otp_app: :twitter, model: "openai:gpt-4o", actor: user)
+  ```
+
+- Switch the chat to a different provider by changing the model string (e.g.
+  `"anthropic:claude-sonnet-4-5"`) and configuring the matching API key. The
+  model is set in two places: `respond.ex` for the chat, and
+  `lib/twitter/chat/conversation/changes/generate_name.ex` for naming
+  conversations.
 - Give the agent your Lab 11 ash_lua runner: add `:ash_lua_eval` (already
   defined as a tool on the `Twitter.Agents` domain) to the `tools:` list in
   `respond.ex`, so the agent can compose several Ash actions in one script
