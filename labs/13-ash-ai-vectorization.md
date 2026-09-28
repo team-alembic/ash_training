@@ -75,12 +75,16 @@ library under the hood to talk to any supported provider (OpenAI, Google,
 Cohere, Voyage, ...). You point it at a provider with a model spec string like
 `"openai:text-embedding-3-small"` — no HTTP client code required.
 
-The only setup needed is telling ReqLLM about your API key — we already did this
-in Lab 12, in `config/runtime.exs`:
+The only setup needed is telling ReqLLM about your API key — the chat generator
+in Lab 12 already added this to `config/runtime.exs`:
 
 ```elixir
-config :req_llm, openai_api_key: openai_api_key
+config :req_llm, openai_api_key: System.get_env("OPENAI_API_KEY")
 ```
+
+(If you took Lab 12's production advice and switched to `System.fetch_env!/1`
+for `prod`, your line reads the key from a variable instead — either way the
+key ends up under `config :req_llm`.)
 
 Make sure `OPENAI_API_KEY` is set in your shell environment before starting the
 app.

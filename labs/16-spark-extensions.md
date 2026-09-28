@@ -239,10 +239,13 @@ been rewritten.
 
 Spark runs transformers in **dependency order**: each transformer can say
 `before?/1` or `after?/1` about others, and Spark topologically sorts them.
-Between transformers with no declared relationship, the order falls back to the
-order the extensions are listed in — Ash's own extension comes first, which is
-the only reason it worked. That's an accident, not a contract, so declare the
-dependency explicitly in the transformer:
+Between transformers with no declared relationship, Spark makes no promise
+about who runs first: the sort walks the dependency graph and picks unrelated
+transformers in whatever order the graph happens to enumerate them. (It is not
+the order of the `extensions:` list either — Ash's own `Ash.Resource.Dsl` is in
+fact the _last_ entry of that list.) Today `SetPrimaryActions` happens to come
+out ahead of ours, which is the only reason it worked. That's an accident, not
+a contract, so declare the dependency explicitly in the transformer:
 
 ```elixir
 # `defaults [:read, :destroy]` only become real actions inside this
